@@ -21,7 +21,9 @@ import android.database.SQLException
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.audiofx.AudioEffect
+import android.media.audiofx.BassBoost
 import android.media.audiofx.LoudnessEnhancer
+import android.media.audiofx.Virtualizer
 import android.net.ConnectivityManager
 import android.os.Binder
 import android.os.Build
@@ -100,6 +102,10 @@ import com.auramusic.lastfm.LastFM
 import com.auramusic.app.MainActivity
 import com.auramusic.app.R
 import com.auramusic.app.constants.AudioNormalizationKey
+import com.auramusic.app.constants.BassBoostEnabledKey
+import com.auramusic.app.constants.BassBoostStrengthKey
+import com.auramusic.app.constants.VirtualizerEnabledKey
+import com.auramusic.app.constants.VirtualizerStrengthKey
 import com.auramusic.app.constants.AudioOffload
 import com.auramusic.app.constants.AudiobookIdsKey
 import com.auramusic.app.constants.AudiobookPositionsKey
@@ -609,6 +615,8 @@ class MusicService :
     private var isAudioEffectSessionOpened = false
     private var audioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
     private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var bassBoost: BassBoost? = null
+    private var virtualizer: Virtualizer? = null
 
     @Volatile private var discordRpcEnabled = false
     private var lastPlaybackSpeed = 1.0f
@@ -1060,6 +1068,18 @@ class MusicService :
         ) { format, normalizeAudio ->
             format to normalizeAudio
         }.collectLatest(scope) { (format, normalizeAudio) -> setupLoudnessEnhancer()}
+
+        dataStore.data
+            .map {
+                listOf(
+                    it[BassBoostEnabledKey] ?: false,
+                    it[BassBoostStrengthKey] ?: 500f,
+                    it[VirtualizerEnabledKey] ?: false,
+                    it[VirtualizerStrengthKey] ?: 500f,
+                )
+            }
+            .distinctUntilChanged()
+            .collectLatest(scope) { setupBassAndVirtualizer() }
 
     combine(
             dataStore.data.map { it[AudioOffload] ?: false },
@@ -2555,6 +2575,45 @@ class MusicService :
         }
     }
 
+    private fun setupBassAndVirtualizer() {
+        val sessionId = player.audioSessionId
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId <= 0) return
+        val prefs = dataStore.get(BassBoostEnabledKey, false) to dataStore.get(BassBoostStrengthKey, 500f)
+        val virt = dataStore.get(VirtualizerEnabledKey, false) to dataStore.get(VirtualizerStrengthKey, 500f)
+        try {
+            if (prefs.first) {
+                if (bassBoost == null) bassBoost = BassBoost(0, sessionId)
+                bassBoost?.apply {
+                    if (strengthSupported) setStrength(prefs.second.toInt().coerceIn(0, 1000).toShort())
+                    enabled = true
+                }
+            } else {
+                bassBoost?.release()
+                bassBoost = null
+            }
+            if (virt.first) {
+                if (virtualizer == null) virtualizer = Virtualizer(0, sessionId)
+                virtualizer?.apply {
+                    if (strengthSupported) setStrength(virt.second.toInt().coerceIn(0, 1000).toShort())
+                    enabled = true
+                }
+            } else {
+                virtualizer?.release()
+                virtualizer = null
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "Bass boost / virtualizer unavailable on this device")
+            releaseBassAndVirtualizer()
+        }
+    }
+
+    private fun releaseBassAndVirtualizer() {
+        try { bassBoost?.release() } catch (_: Exception) {}
+        try { virtualizer?.release() } catch (_: Exception) {}
+        bassBoost = null
+        virtualizer = null
+    }
+
     private fun releaseLoudnessEnhancer() {
         try {
             loudnessEnhancer?.release()
@@ -2574,6 +2633,7 @@ class MusicService :
         isAudioEffectSessionOpened = true
         audioEffectSessionId = sessionId
         setupLoudnessEnhancer()
+        setupBassAndVirtualizer()
         sendBroadcast(
             Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
@@ -2589,6 +2649,7 @@ class MusicService :
         isAudioEffectSessionOpened = false
         audioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
         releaseLoudnessEnhancer()
+        releaseBassAndVirtualizer()
         sendBroadcast(
             Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)

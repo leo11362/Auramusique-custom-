@@ -51,6 +51,10 @@ import com.auramusic.app.BuildConfig
 import com.auramusic.app.LocalPlayerAwareWindowInsets
 import com.auramusic.app.R
 import com.auramusic.app.constants.AudioNormalizationKey
+import com.auramusic.app.constants.BassBoostEnabledKey
+import com.auramusic.app.constants.BassBoostStrengthKey
+import com.auramusic.app.constants.VirtualizerEnabledKey
+import com.auramusic.app.constants.VirtualizerStrengthKey
 import com.auramusic.app.constants.AudioOffload
 import com.auramusic.app.constants.AudioQuality
 import com.auramusic.app.constants.AudioQualityKey
@@ -136,6 +140,10 @@ fun PlayerSettings(
         AudioNormalizationKey,
         defaultValue = true
     )
+    val (bassBoostEnabled, onBassBoostEnabledChange) = rememberPreference(BassBoostEnabledKey, defaultValue = false)
+    val (bassBoostStrength, onBassBoostStrengthChange) = rememberPreference(BassBoostStrengthKey, defaultValue = 500f)
+    val (virtualizerEnabled, onVirtualizerEnabledChange) = rememberPreference(VirtualizerEnabledKey, defaultValue = false)
+    val (virtualizerStrength, onVirtualizerStrengthChange) = rememberPreference(VirtualizerStrengthKey, defaultValue = 500f)
     val (lateNightMode, onLateNightModeChange) = rememberPreference(
         LateNightModeKey,
         defaultValue = false
@@ -462,6 +470,44 @@ fun PlayerSettings(
                         )
                     },
                     onClick = { onAudioNormalizationChange(!audioNormalization) }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.volume_off_pause),
+                    title = { Text("Bass boost") },
+                    description = {
+                        Column {
+                            Text("${(bassBoostStrength / 10f).roundToInt()}%")
+                            Slider(
+                                value = bassBoostStrength,
+                                onValueChange = onBassBoostStrengthChange,
+                                valueRange = 0f..1000f,
+                                enabled = bassBoostEnabled
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        Switch(checked = bassBoostEnabled, onCheckedChange = onBassBoostEnabledChange)
+                    },
+                    onClick = { onBassBoostEnabledChange(!bassBoostEnabled) }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.volume_off_pause),
+                    title = { Text("Virtualizer (surround)") },
+                    description = {
+                        Column {
+                            Text("${(virtualizerStrength / 10f).roundToInt()}%")
+                            Slider(
+                                value = virtualizerStrength,
+                                onValueChange = onVirtualizerStrengthChange,
+                                valueRange = 0f..1000f,
+                                enabled = virtualizerEnabled
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        Switch(checked = virtualizerEnabled, onCheckedChange = onVirtualizerEnabledChange)
+                    },
+                    onClick = { onVirtualizerEnabledChange(!virtualizerEnabled) }
                 ))
                 add(Material3SettingsItem(
                     icon = painterResource(R.drawable.volume_off_pause),
