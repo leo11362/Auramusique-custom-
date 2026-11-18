@@ -40,7 +40,11 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.auramusic.app.playback.queues.YouTubeQueue
+import com.auramusic.app.ui.component.YouTubeListItem
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -189,6 +193,12 @@ fun LocalPlaylistScreen(
 
     val playlist by viewModel.playlist.collectAsState()
     val songs by viewModel.playlistSongs.collectAsState()
+    val suggestions by viewModel.suggestions.collectAsState()
+    val suggestionsLoading by viewModel.suggestionsLoading.collectAsState()
+    val suggestionSeedIds = songs.map { it.song.id }
+    LaunchedEffect(suggestionSeedIds.isEmpty()) {
+        viewModel.loadSuggestions(suggestionSeedIds)
+    }
     val mutableSongs = remember { mutableStateListOf<PlaylistSong>() }
     val playlistLength =
         remember(songs) {
@@ -743,6 +753,55 @@ fun LocalPlaylistScreen(
                             content()
                         }
                     }
+                }
+            }
+            if (!isSearching && (suggestions.isNotEmpty() || suggestionsLoading)) {
+                item(key = "suggestions_header") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 4.dp, top = 16.dp, bottom = 4.dp),
+                    ) {
+                        Text(
+                            text = "Suggested for this playlist",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        androidx.compose.material3.IconButton(
+                            onClick = { viewModel.loadSuggestions(songs.map { it.song.id }, force = true) },
+                        ) {
+                            Icon(painterResource(R.drawable.refresh), contentDescription = "Refresh suggestions")
+                        }
+                    }
+                }
+                items(items = suggestions, key = { "suggestion_" + it.id }) { item ->
+                    YouTubeListItem(
+                        item = item,
+                        isSwipeable = false,
+                        modifier = Modifier
+                            .animateItem()
+                            .clickable {
+                                playerConnection.playQueue(YouTubeQueue.radio(item.toMediaMetadata()))
+                            },
+                        trailingContent = {
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    val target = playlist ?: return@IconButton
+                                    database.transaction {
+                                        insert(item.toMediaMetadata())
+                                        addSongToPlaylist(target, listOf(item.id))
+                                    }
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        target.playlist.browseId?.let { YouTube.addToPlaylist(it, item.id) }
+                                    }
+                                    viewModel.dismissSuggestion(item.id)
+                                },
+                            ) {
+                                Icon(painterResource(R.drawable.add), contentDescription = "Add to playlist")
+                            }
+                        },
+                    )
                 }
             }
         }

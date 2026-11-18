@@ -27,7 +27,14 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import com.auramusic.innertube.YouTube
+import com.auramusic.innertube.models.SongItem
+import com.auramusic.innertube.models.WatchEndpoint
 import java.text.Collator
 import java.util.Locale
 import javax.inject.Inject
@@ -41,6 +48,49 @@ constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val playlistId = savedStateHandle.get<String>("playlistId")!!
+    private val _suggestions = MutableStateFlow<List<SongItem>>(emptyList())
+    val suggestions: StateFlow<List<SongItem>> = _suggestions
+    val suggestionsLoading = MutableStateFlow(false)
+
+    /**
+     * Songs similar to the playlist: the YouTube Music radio of a few random songs of the playlist,
+     * mixed round-robin, without the songs already in it.
+     */
+    fun loadSuggestions(songIds: List<String>, force: Boolean = false) {
+        if (songIds.isEmpty()) {
+            _suggestions.value = emptyList()
+            return
+        }
+        if (!force && (_suggestions.value.isNotEmpty() || suggestionsLoading.value)) return
+        suggestionsLoading.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val existing = songIds.toSet()
+                val lists = songIds.shuffled().take(5).map { id ->
+                    async {
+                        YouTube.next(WatchEndpoint(videoId = id, playlistId = "RDAMVM$id", params = "wAEB"))
+                            .getOrNull()?.items.orEmpty()
+                    }
+                }.awaitAll()
+                val seen = HashSet<String>()
+                val out = mutableListOf<SongItem>()
+                var i = 0
+                while (out.size < 30 && lists.any { i < it.size }) {
+                    lists.forEach { l ->
+                        l.getOrNull(i)?.let { if (it.id !in existing && seen.add(it.id)) out.add(it) }
+                    }
+                    i++
+                }
+                _suggestions.value = out
+            } finally {
+                suggestionsLoading.value = false
+            }
+        }
+    }
+
+    fun dismissSuggestion(id: String) {
+        _suggestions.value = _suggestions.value.filter { it.id != id }
+    }
     val playlist =
         database
             .playlist(playlistId)
