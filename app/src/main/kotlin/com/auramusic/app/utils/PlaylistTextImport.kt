@@ -25,11 +25,32 @@ object PlaylistTextImport {
     private val amazonRegex = Regex("""https?://[a-z.]*music\.amazon\.[a-z.]+/[^\s]+""")
     private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
 
+    private val tiktokRegex = Regex("""https?://(?:[a-z]+\.)?tiktok\.com/[^\s]+""")
+    private val originalSound = Regex("""(?i)^(original sound|son original|sonido original|originalton|suono originale|som original).*""")
+
+    fun isTikTokLink(text: String) = tiktokRegex.containsMatchIn(text)
+
+    /** Reads the sound of a TikTok video (page metadata, no login) as one song to look up on YouTube Music. */
+    suspend fun fetchTikTok(text: String): Pair<String, List<Song>> = withContext(Dispatchers.IO) {
+        val url = tiktokRegex.find(text)!!.value
+        val html = httpGet(url)
+        val i = html.indexOf("\"music\":{")
+        if (i < 0) error("Sound not found on this TikTok page")
+        val block = html.substring(i, minOf(html.length, i + 4000))
+        fun field(k: String) = Regex("\"$k\":\"((?:[^\"\\\\]|\\\\.)*)\"").find(block)?.groupValues?.get(1)
+            ?.let { runCatching { JSONObject("{\"v\":\"$it\"}").getString("v") }.getOrDefault(it) }.orEmpty()
+        val title = field("title")
+        val author = field("authorName")
+        if (title.isBlank()) error("Sound not found on this TikTok page")
+        if (originalSound.matches(title)) error("This is an original sound (voice or creator audio), it is not a song on YouTube Music")
+        "TikTok" to listOf(placeholder(title, author))
+    }
+
     fun isSpotifyLink(text: String) = spotifyRegex.containsMatchIn(text)
 
     /** Links that can be read without any login. */
     fun isDirectLink(text: String) =
-        spotifyRegex.containsMatchIn(text) || deezerRegex.containsMatchIn(text) ||
+        tiktokRegex.containsMatchIn(text) || spotifyRegex.containsMatchIn(text) || deezerRegex.containsMatchIn(text) ||
             appleRegex.containsMatchIn(text) || tidalRegex.containsMatchIn(text) ||
             text.contains("deezer.page.link") || text.contains("link.deezer.com")
 
@@ -39,6 +60,7 @@ object PlaylistTextImport {
             ?: spotifyRegex.find(text)?.let { "https://open.spotify.com/${it.groupValues[1]}/${it.groupValues[2]}" }
 
     suspend fun fetchLink(text: String): Pair<String, List<Song>> {
+        if (tiktokRegex.containsMatchIn(text)) return fetchTikTok(text)
         var t = text
         if (!deezerRegex.containsMatchIn(t) && (t.contains("deezer.page.link") || t.contains("link.deezer.com"))) {
             val short = Regex("""https?://[^\s]*(?:deezer\.page\.link|link\.deezer\.com)[^\s]*""").find(t)!!.value
