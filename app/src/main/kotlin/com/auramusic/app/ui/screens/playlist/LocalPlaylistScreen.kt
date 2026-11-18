@@ -740,9 +740,23 @@ fun LocalPlaylistScreen(
                         )
                     }
 
+                    val nextSongId = if (isSearching || inSelectMode) null else mutableSongs.getOrNull(index + 1)?.song?.id
+                    val contentWithTransition: @Composable () -> Unit = {
+                        androidx.compose.foundation.layout.Column {
+                            content()
+                            if (nextSongId != null) {
+                                com.auramusic.app.ui.component.DjTransitionChip(
+                                    fromId = song.song.id,
+                                    toId = nextSongId,
+                                    onClick = { navController.navigate("dj_mix/${song.song.id}/$nextSongId") },
+                                )
+                            }
+                        }
+                    }
+
                     if (locked || inSelectMode || !swipeRemoveEnabled) {
                         Box(modifier = Modifier.animateItem()) {
-                            content()
+                            contentWithTransition()
                         }
                     } else {
                         SwipeToDismissBox(
@@ -750,7 +764,7 @@ fun LocalPlaylistScreen(
                             backgroundContent = {},
                             modifier = Modifier.animateItem()
                         ) {
-                            content()
+                            contentWithTransition()
                         }
                     }
                 }
