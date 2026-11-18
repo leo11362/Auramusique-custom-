@@ -105,11 +105,11 @@ object DjAnalyzer {
                 var got = 0L
                 try {
                     source.open(
-                        DataSpec.Builder().setUri(songId.toUri()).setKey(songId)
-                            .setPosition(pos).setLength(CHUNK).build(),
+                        // No length, like the player: the resolver then bounds the request to one chunk.
+                        DataSpec.Builder().setUri(songId.toUri()).setKey(songId).setPosition(pos).build(),
                     )
-                    while (true) {
-                        val n = source.read(buf, 0, buf.size)
+                    while (got < CHUNK) {
+                        val n = source.read(buf, 0, minOf(buf.size.toLong(), CHUNK - got).toInt())
                         if (n < 0) break
                         os.write(buf, 0, n)
                         got += n
