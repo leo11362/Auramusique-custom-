@@ -93,20 +93,36 @@ object DjAnalyzer {
         }
     }
 
+    /** Same chunk size the player asks for: the data source resolves the stream URL per chunk. */
+    private const val CHUNK = 512 * 1024L
+
     private suspend fun download(source: DataSource, songId: String, out: File) {
-        try {
-            source.open(DataSpec.Builder().setUri(songId.toUri()).setKey(songId).build())
-            out.outputStream().use { os ->
-                val buf = ByteArray(64 * 1024)
-                while (true) {
-                    coroutineContext.ensureActive()
-                    val n = source.read(buf, 0, buf.size)
-                    if (n < 0) break
-                    os.write(buf, 0, n)
+        out.outputStream().use { os ->
+            val buf = ByteArray(64 * 1024)
+            var pos = 0L
+            while (true) {
+                coroutineContext.ensureActive()
+                var got = 0L
+                try {
+                    source.open(
+                        DataSpec.Builder().setUri(songId.toUri()).setKey(songId)
+                            .setPosition(pos).setLength(CHUNK).build(),
+                    )
+                    while (true) {
+                        val n = source.read(buf, 0, buf.size)
+                        if (n < 0) break
+                        os.write(buf, 0, n)
+                        got += n
+                    }
+                } catch (e: java.io.IOException) {
+                    // Asking past the end of the file (exact multiple of the chunk size) means done.
+                    if (pos > 0L && got == 0L) return else throw e
+                } finally {
+                    runCatching { source.close() }
                 }
+                pos += got
+                if (got < CHUNK) return
             }
-        } finally {
-            runCatching { source.close() }
         }
     }
 
