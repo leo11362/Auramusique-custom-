@@ -18,10 +18,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - name: local.properties
         shell: bash
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+        run: echo "sdk.dir=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" > local.properties; cat local.properties
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
         shell: bash
