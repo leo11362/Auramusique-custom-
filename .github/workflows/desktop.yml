@@ -1,6 +1,10 @@
 name: AuraMusique Desktop
 on:
   workflow_dispatch:
+  push:
+    branches: [ci-windows-mac]
+permissions:
+  contents: write
 jobs:
   build:
     strategy:
@@ -28,7 +32,10 @@ jobs:
           cd desktopApp/build/compose/binaries/main/app
           ls
           7z a -tzip "$GITHUB_WORKSPACE/AuraMusique-Desktop-${{ runner.os }}.zip" .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AuraMusique-${{ runner.os }}
-          path: AuraMusique-Desktop-${{ runner.os }}.zip
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep '^appVersion' gradle.properties | cut -d= -f2)
+          gh release upload "v$V" "AuraMusique-Desktop-${{ runner.os }}.zip" --clobber
