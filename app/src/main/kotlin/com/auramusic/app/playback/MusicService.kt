@@ -48,6 +48,7 @@ import androidx.media3.common.Player.REPEAT_MODE_ONE
 import androidx.media3.common.Player.STATE_IDLE
 import androidx.media3.common.Timeline
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.media3.common.audio.SonicAudioProcessor
@@ -359,6 +360,8 @@ class MusicService :
     private var djMode = false
     private var djBlendMs = 6_000L
     private var djStyle = "FADE"
+    /** Saved DJ transition used by the blend currently being scheduled / played. */
+    private var activeTransition: com.auramusic.app.dj.DjTransition? = null
     private var automixBlendPercent = 90f
     
     private var automixTriggerJob: Job? = null
@@ -5275,6 +5278,12 @@ class MusicService :
         }
     }
     
+    private fun transitionForNext(nextIndex: Int): com.auramusic.app.dj.DjTransition? {
+        val from = player.currentMediaItem?.mediaId ?: return null
+        val to = player.getMediaItemAt(nextIndex).mediaId
+        return com.auramusic.app.dj.DjTransition.load(filesDir, from, to)
+    }
+
     private fun scheduleAutomix() {
         automixTriggerJob?.cancel()
         automixTriggerJob = null
@@ -5282,7 +5291,12 @@ class MusicService :
         automixTriggerMessage = null
         automixWarmupJob?.cancel()
         automixWarmupJob = null
-        if (!automixEnabled) return
+        activeTransition = null
+        // A saved DJ transition into the next song plays even when Automix is off.
+        val savedTransition = if (player.mediaItemCount > 1) {
+            nextAutomixMediaItemIndex().takeIf { it != C.INDEX_UNSET }?.let { transitionForNext(it) }
+        } else null
+        if (!automixEnabled && savedTransition == null) return
         // Ensure the next automix item is in the queue before scheduling
         runCatching { enqueueNextAutomixItemIfNeeded() }
         // Never automix/crossfade into a video-backed song: the secondary player
@@ -5318,14 +5332,17 @@ class MusicService :
             return
         }
 
-        val blendMs = resolveBlendDurationMs()
+        activeTransition = savedTransition
+        val blendMs = savedTransition?.let { minOf(it.durationMs, (player.duration - it.aOutSec * 1000f).toLong()) }
+            ?: resolveBlendDurationMs()
 
         // Automix starts the blend once the configured % of the current song has played
         // (default 90%), clamped so the whole blend fits before the track ends.
         val triggerPercent = automixBlendPercent / 100f
         val triggerOffset = (player.duration * triggerPercent).toLong()
         val triggerTime =
-            if (djMode) player.duration - blendMs else minOf(triggerOffset, player.duration - blendMs)
+            if (savedTransition != null) (savedTransition.aOutSec * 1000f).toLong().coerceAtMost(player.duration - 1000L)
+            else if (djMode) player.duration - blendMs else minOf(triggerOffset, player.duration - blendMs)
         val triggerDelayMs = triggerTime - player.currentPosition
         if (triggerDelayMs <= 0) return
 
@@ -5349,7 +5366,7 @@ class MusicService :
         // when playback actually reaches the trigger, so pausing, seeking and a stalled
         // buffer all move it instead of letting it fire at the wrong moment mid-song.
         automixTriggerMessage = player.createMessage { _, _ ->
-            if (player.isPlaying && player.currentMediaItem?.mediaId == targetMediaId && automixEnabled) {
+            if (player.isPlaying && player.currentMediaItem?.mediaId == targetMediaId && (automixEnabled || activeTransition != null)) {
                 startAutomix()
             }
             automixTriggerMessage = null
@@ -5429,7 +5446,7 @@ class MusicService :
      */
     private fun warmUpAutomixPlayer(nextIndex: Int) {
         if (secondaryPlayer != null || isAutomixing || isVideoMode) return
-        if (!automixEnabled || player.repeatMode == REPEAT_MODE_ONE) return
+        if ((!automixEnabled && activeTransition == null) || player.repeatMode == REPEAT_MODE_ONE) return
 
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
         if (player.getMediaItemAt(nextIndex).metadata?.isVideoSong == true) return
@@ -5442,7 +5459,8 @@ class MusicService :
         warmedPlayer.setMediaItems(items)
         warmedPlayer.repeatMode = player.repeatMode
         warmedPlayer.shuffleModeEnabled = player.shuffleModeEnabled
-        warmedPlayer.seekTo(nextIndex, 0)
+        warmedPlayer.seekTo(nextIndex, activeTransition?.let { (it.bInSec * 1000f).toLong() } ?: 0L)
+        activeTransition?.let { warmedPlayer.playbackParameters = PlaybackParameters(it.speed, 1f) }
         // Stay silent and paused: this only resolves the stream and fills the buffer.
         warmedPlayer.volume = 0f
         warmedPlayer.playWhenReady = false
@@ -5535,7 +5553,8 @@ class MusicService :
             secPlayer.repeatMode = player.repeatMode
             secPlayer.shuffleModeEnabled = player.shuffleModeEnabled
             // Seek to next track (the one we are fading into)
-            secPlayer.seekTo(nextIndex, 0)
+            secPlayer.seekTo(nextIndex, activeTransition?.let { (it.bInSec * 1000f).toLong() } ?: 0L)
+            activeTransition?.let { secPlayer.playbackParameters = PlaybackParameters(it.speed, 1f) }
         }
         // A warmed player already holds this queue and is parked on nextIndex with its buffer
         // filled. Re-setting media items here would throw that buffer away and defeat the
@@ -5561,7 +5580,7 @@ class MusicService :
                 // Stream resolution can take longer than a cache hit. If playback moved while
                 // waiting, discard this stale player rather than swapping to the wrong song.
                 if (player.currentMediaItem?.mediaId != outgoingMediaId ||
-                    player.repeatMode == REPEAT_MODE_ONE || !automixEnabled
+                    player.repeatMode == REPEAT_MODE_ONE || (!automixEnabled && activeTransition == null)
                 ) {
                     secPlayer.removeListener(secondaryPlayerListener)
                     secPlayer.stop()
@@ -5704,8 +5723,10 @@ automixDeadlineJob?.cancel()
          automixJob = scope.launch {
              // Blend length is derived from the runway left in the outgoing track. See
              // resolveBlendDurationMs.
-             val duration = blendMs.coerceIn(AUTOMIX_MIN_BLEND_MS, if (djMode) DJ_MAX_BLEND_MS else AUTOMIX_MAX_BLEND_MS)
+             val duration = if (activeTransition != null) blendMs.coerceAtLeast(AUTOMIX_MIN_BLEND_MS)
+                 else blendMs.coerceIn(AUTOMIX_MIN_BLEND_MS, if (djMode) DJ_MAX_BLEND_MS else AUTOMIX_MAX_BLEND_MS)
              val style = if (djMode) djStyle else "FADE"
+             val transition = activeTransition
              val targetVolume = if (isMuted.value) 0f else playerVolume.value
              val outgoingStartVolume = oldPlayer.volume
              nextPlayer.volume = 0f
@@ -5730,7 +5751,7 @@ automixDeadlineJob?.cancel()
                  delay(AUTOMIX_RAMP_TICK_MS)
                  elapsedMs += AUTOMIX_RAMP_TICK_MS
                  val t = minOf(elapsedMs, duration) / duration.toFloat()
-                 val (inGain, outGain) = djGains(style, t)
+                 val (inGain, outGain) = transition?.let { it.inGain(t) to it.outGain(t) } ?: djGains(style, t)
                  try {
                      nextPlayer.volume = targetVolume * inGain
                      oldPlayer.volume = outgoingStartVolume * outGain
@@ -5747,6 +5768,17 @@ automixDeadlineJob?.cancel()
                 cleanupAutomix()
                 openAudioEffectSession()
             } catch (e: Exception) { }
+            // The incoming song was stretched to match the tempo; ease it back to normal speed.
+            transition?.takeIf { abs(it.speed - 1f) > 0.002f }?.let { tr ->
+                val steps = 30
+                for (i in 1..steps) {
+                    delay(200)
+                    runCatching {
+                        nextPlayer.playbackParameters = PlaybackParameters(tr.speed + (1f - tr.speed) * i / steps, 1f)
+                    }
+                }
+                runCatching { nextPlayer.playbackParameters = PlaybackParameters(1f, 1f) }
+            }
         }
     }
     

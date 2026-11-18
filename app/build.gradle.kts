@@ -25,8 +25,8 @@ android {
         applicationId = "com.auramusic.app"
         minSdk = 23
         targetSdk = 36
-        versionCode = 38
-        versionName = "3.9.0"
+        versionCode = 39
+        versionName = "3.10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
