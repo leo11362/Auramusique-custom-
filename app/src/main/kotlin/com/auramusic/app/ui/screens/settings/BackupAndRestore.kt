@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -40,6 +41,7 @@ import androidx.navigation.NavController
 import com.auramusic.app.LocalPlayerAwareWindowInsets
 import com.auramusic.app.R
 import com.auramusic.app.db.entities.Song
+import com.auramusic.app.utils.PlaylistTextImport
 import com.auramusic.app.ui.component.IconButton
 import com.auramusic.app.ui.component.Material3SettingsGroup
 import com.auramusic.app.ui.component.Material3SettingsItem
@@ -65,6 +67,10 @@ fun BackupAndRestore(
     viewModel: BackupRestoreViewModel = hiltViewModel(),
 ) {
     var importedTitle by remember { mutableStateOf("") }
+    var showTextImport by remember { mutableStateOf(false) }
+    var textImportValue by remember { mutableStateOf("") }
+    var textImportLoading by remember { mutableStateOf(false) }
+    val textImportScope = rememberCoroutineScope()
     val importedSongs = remember { mutableStateListOf<Song>() }
     var showChoosePlaylistDialogOnline by rememberSaveable {
         mutableStateOf(false)
@@ -163,6 +169,11 @@ fun BackupAndRestore(
                     }
                 ),
                 Material3SettingsItem(
+                    title = { Text("Import from text or Spotify link") },
+                    icon = painterResource(R.drawable.playlist_add),
+                    onClick = { showTextImport = true }
+                ),
+                Material3SettingsItem(
                     title = { Text(stringResource(R.string.import_csv)) },
                     icon = painterResource(R.drawable.playlist_add),
                     onClick = {
@@ -187,6 +198,64 @@ fun BackupAndRestore(
             }
         }
     )
+
+    if (showTextImport) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!textImportLoading) showTextImport = false },
+            title = { Text("Import a playlist") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    Text("Paste a public Spotify playlist/album link, or a list: one \"Artist - Title\" per line.")
+                    androidx.compose.material3.OutlinedTextField(
+                        value = textImportValue,
+                        onValueChange = { textImportValue = it },
+                        minLines = 4,
+                        maxLines = 10,
+                        modifier = androidx.compose.ui.Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = textImportValue.isNotBlank() && !textImportLoading,
+                    onClick = {
+                        textImportLoading = true
+                        textImportScope.launch {
+                            runCatching {
+                                if (PlaylistTextImport.isSpotifyLink(textImportValue)) {
+                                    PlaylistTextImport.fetchSpotify(textImportValue)
+                                } else {
+                                    "Imported playlist" to PlaylistTextImport.parseLines(textImportValue)
+                                }
+                            }.onSuccess { (name, songs) ->
+                                if (songs.isEmpty()) {
+                                    android.widget.Toast.makeText(context, "No songs found", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    importedTitle = name
+                                    importedSongs.clear()
+                                    importedSongs.addAll(songs)
+                                    showTextImport = false
+                                    textImportValue = ""
+                                    showChoosePlaylistDialogOnline = true
+                                }
+                            }.onFailure {
+                                android.widget.Toast.makeText(context, "Import failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                            textImportLoading = false
+                        }
+                    },
+                ) { Text(if (textImportLoading) "Loading..." else "Import") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = !textImportLoading,
+                    onClick = { showTextImport = false },
+                ) { Text("Cancel") }
+            },
+        )
+    }
 
     AddToPlaylistDialogOnline(
         isVisible = showChoosePlaylistDialogOnline,
