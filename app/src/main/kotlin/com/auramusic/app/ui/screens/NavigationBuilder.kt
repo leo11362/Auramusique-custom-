@@ -121,6 +121,27 @@ fun NavGraphBuilder.navigationBuilder(
         DjScreen(navController, backStackEntry.arguments?.getString("songId").orEmpty())
     }
 
+    composable(
+        route = "dj_pick/{songId}",
+        arguments = listOf(navArgument("songId") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        DjPickScreen(navController, backStackEntry.arguments?.getString("songId").orEmpty())
+    }
+
+    composable(
+        route = "dj_mix/{fromId}/{toId}",
+        arguments = listOf(
+            navArgument("fromId") { type = NavType.StringType },
+            navArgument("toId") { type = NavType.StringType },
+        ),
+    ) { backStackEntry ->
+        DjMixScreen(
+            navController,
+            backStackEntry.arguments?.getString("fromId").orEmpty(),
+            backStackEntry.arguments?.getString("toId").orEmpty(),
+        )
+    }
+
     composable("listen_together") {
         ListenTogetherScreen(navController)
     }

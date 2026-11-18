@@ -64,6 +64,20 @@ import kotlin.math.roundToInt
 
 private const val WINDOW_SEC = 20f
 
+/** Cached analysis, or a fresh one made through the player's data source. */
+@OptIn(UnstableApi::class)
+internal suspend fun loadDjAnalysis(
+    context: android.content.Context,
+    playerConnection: com.auramusic.app.playback.PlayerConnection?,
+    songId: String,
+    onStatus: (String) -> Unit = {},
+): DjAnalysis {
+    DjAnalyzer.load(context.filesDir, songId)?.let { return it }
+    val service = playerConnection?.service
+        ?: error("Le lecteur n'est pas prêt. Lance une chanson puis réessaie.")
+    return DjAnalyzer.analyze(songId, context.filesDir, service.createAnalysisDataSource(), onStatus)
+}
+
 @kotlin.OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DjScreen(navController: NavController, songId: String) {
@@ -149,7 +163,7 @@ fun DjScreen(navController: NavController, songId: String) {
                     Spacer(Modifier.width(12.dp))
                     Text(status)
                 }
-                else -> DjAnalysisView(a, playhead) { fixed ->
+                else -> DjAnalysisView(a, playhead, onPick = { navController.navigate("dj_pick/$songId") }) { fixed ->
                     DjAnalyzer.cacheFile(context.filesDir, songId).writeText(fixed.toJson())
                     analysis = fixed
                 }
@@ -159,7 +173,7 @@ fun DjScreen(navController: NavController, songId: String) {
 }
 
 @Composable
-private fun DjAnalysisView(a: DjAnalysis, playhead: Float?, onChange: (DjAnalysis) -> Unit) {
+private fun DjAnalysisView(a: DjAnalysis, playhead: Float?, onPick: () -> Unit, onChange: (DjAnalysis) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
@@ -191,6 +205,7 @@ private fun DjAnalysisView(a: DjAnalysis, playhead: Float?, onChange: (DjAnalysi
         }
         WaveformZoom(a, start, playhead) { start = (start + it).coerceIn(0f, maxStart) }
         WaveformOverview(a, start, playhead) { start = it.coerceIn(0f, maxStart) }
+        Button(onClick = onPick, modifier = Modifier.fillMaxWidth()) { Text("Choisir la chanson de transition") }
         Text(
             "Glisse la grande onde pour naviguer. Les traits fins = temps, les traits épais = début de mesure.",
             style = MaterialTheme.typography.bodySmall,
