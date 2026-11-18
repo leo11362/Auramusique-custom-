@@ -61,6 +61,9 @@ import com.auramusic.app.constants.AudioQualityKey
 import com.auramusic.app.constants.AutoDownloadOnLikeKey
 import com.auramusic.app.constants.AutomixEnabledKey
 import com.auramusic.app.constants.AutomixBlendPercentKey
+import com.auramusic.app.constants.DjModeEnabledKey
+import com.auramusic.app.constants.DjBlendSecondsKey
+import com.auramusic.app.constants.DjTransitionStyleKey
 import com.auramusic.app.constants.AuraCanvasEnabledKey
 import com.auramusic.app.constants.AutoLoadMoreKey
 import com.auramusic.app.constants.AutoSkipNextOnErrorKey
@@ -124,6 +127,9 @@ fun PlayerSettings(
         AutomixBlendPercentKey,
         defaultValue = 90f
     )
+    val (djMode, onDjModeChange) = rememberPreference(DjModeEnabledKey, defaultValue = false)
+    val (djBlendSeconds, onDjBlendSecondsChange) = rememberPreference(DjBlendSecondsKey, defaultValue = 6f)
+    val (djStyle, onDjStyleChange) = rememberPreference(DjTransitionStyleKey, defaultValue = "FADE")
     val (persistentQueue, onPersistentQueueChange) = rememberPreference(
         PersistentQueueKey,
         defaultValue = true
@@ -393,6 +399,53 @@ fun PlayerSettings(
                             }
                         }
                     ))
+                }
+                // DJ mode
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.music_note),
+                    title = { Text("Mode DJ") },
+                    description = { Text("Enchaîne les chansons comme un DJ : durée et style de transition au choix (bêta)") },
+                    showBadge = true,
+                    trailingContent = {
+                        Switch(checked = djMode, onCheckedChange = onDjModeChange)
+                    },
+                    onClick = { onDjModeChange(!djMode) }
+                ))
+                if (djMode) {
+                    add(Material3SettingsItem(
+                        icon = painterResource(R.drawable.history),
+                        title = { Text("Durée de la transition") },
+                        description = {
+                            Column {
+                                Text("${djBlendSeconds.roundToInt()} s")
+                                Slider(
+                                    value = djBlendSeconds,
+                                    onValueChange = onDjBlendSecondsChange,
+                                    valueRange = 1f..12f,
+                                    steps = 10
+                                )
+                            }
+                        }
+                    ))
+                    val djStyles = listOf(
+                        "FADE" to "Fondu : les deux chansons se croisent",
+                        "SWAP" to "Entrée : la suivante arrive, puis l'ancienne part",
+                        "SLOW_IN" to "Montée : la suivante monte doucement sous l'ancienne",
+                        "CUT" to "Coupure : changement net à la fin",
+                    )
+                    djStyles.forEach { (id, label) ->
+                        add(Material3SettingsItem(
+                            icon = painterResource(R.drawable.album),
+                            title = { Text(label) },
+                            trailingContent = {
+                                androidx.compose.material3.RadioButton(
+                                    selected = djStyle == id,
+                                    onClick = { onDjStyleChange(id) }
+                                )
+                            },
+                            onClick = { onDjStyleChange(id) }
+                        ))
+                    }
                 }
                 add(Material3SettingsItem(
                     icon = painterResource(R.drawable.history),

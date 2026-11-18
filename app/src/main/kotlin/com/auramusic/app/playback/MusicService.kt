@@ -356,6 +356,9 @@ class MusicService :
     private var projectivyPreviewTitle: String? = null
 
     private var automixEnabled = false
+    private var djMode = false
+    private var djBlendMs = 6_000L
+    private var djStyle = "FADE"
     private var automixBlendPercent = 90f
     
     private var automixTriggerJob: Job? = null
@@ -1223,19 +1226,27 @@ class MusicService :
             .distinctUntilChanged()
             .collect(scope) { lockScreenPlayerEnabled = it }
 
-        // Automix: configure automix settings
+        // Automix + DJ mode: DJ mode drives the same blend engine with a fixed length and a style.
         dataStore.data
             .map { prefs ->
-                Pair(
+                listOf(
                     prefs[AutomixEnabledKey] ?: false,
                     prefs[AutomixBlendPercentKey] ?: 90f,
+                    prefs[com.auramusic.app.constants.DjModeEnabledKey] ?: false,
+                    prefs[com.auramusic.app.constants.DjBlendSecondsKey] ?: 6f,
+                    prefs[com.auramusic.app.constants.DjTransitionStyleKey] ?: "FADE",
                 )
             }
             .distinctUntilChanged()
-            .collect(scope) { (enabled, blendPercent) ->
-                automixEnabled = enabled
+            .collect(scope) { v ->
+                val enabled = v[0] as Boolean
+                val blendPercent = v[1] as Float
+                djMode = v[2] as Boolean
+                djBlendMs = ((v[3] as Float) * 1000f).toLong().coerceIn(1_000L, DJ_MAX_BLEND_MS)
+                djStyle = v[4] as String
+                automixEnabled = enabled || djMode
                 automixBlendPercent = blendPercent.coerceIn(10f, 100f)
-                Timber.tag(TAG).i("Automix enabled=$automixEnabled, blend=$automixBlendPercent%")
+                Timber.tag(TAG).i("Automix enabled=$automixEnabled dj=$djMode style=$djStyle blend=${djBlendMs}ms")
                 scheduleAutomix()
             }
 
@@ -5310,7 +5321,8 @@ class MusicService :
         // (default 90%), clamped so the whole blend fits before the track ends.
         val triggerPercent = automixBlendPercent / 100f
         val triggerOffset = (player.duration * triggerPercent).toLong()
-        val triggerTime = minOf(triggerOffset, player.duration - blendMs)
+        val triggerTime =
+            if (djMode) player.duration - blendMs else minOf(triggerOffset, player.duration - blendMs)
         val triggerDelayMs = triggerTime - player.currentPosition
         if (triggerDelayMs <= 0) return
 
@@ -5351,6 +5363,7 @@ class MusicService :
      * fades instead of clicking.
      */
     private fun resolveBlendDurationMs(): Long {
+        if (djMode) return djBlendMs
         val duration = player.duration
         val remaining =
             if (duration == C.TIME_UNSET || duration <= 0) Long.MAX_VALUE
@@ -5688,7 +5701,8 @@ automixDeadlineJob?.cancel()
          automixJob = scope.launch {
              // Blend length is derived from the runway left in the outgoing track. See
              // resolveBlendDurationMs.
-             val duration = blendMs.coerceIn(AUTOMIX_MIN_BLEND_MS, AUTOMIX_MAX_BLEND_MS)
+             val duration = blendMs.coerceIn(AUTOMIX_MIN_BLEND_MS, if (djMode) DJ_MAX_BLEND_MS else AUTOMIX_MAX_BLEND_MS)
+             val style = if (djMode) djStyle else "FADE"
              val targetVolume = if (isMuted.value) 0f else playerVolume.value
              val outgoingStartVolume = oldPlayer.volume
              nextPlayer.volume = 0f
@@ -5712,10 +5726,11 @@ automixDeadlineJob?.cancel()
 
                  delay(AUTOMIX_RAMP_TICK_MS)
                  elapsedMs += AUTOMIX_RAMP_TICK_MS
-                 val angle = minOf(elapsedMs, duration) / duration.toFloat() * (PI.toFloat() / 2f)
+                 val t = minOf(elapsedMs, duration) / duration.toFloat()
+                 val (inGain, outGain) = djGains(style, t)
                  try {
-                     nextPlayer.volume = targetVolume * sin(angle)
-                     oldPlayer.volume = outgoingStartVolume * cos(angle)
+                     nextPlayer.volume = targetVolume * inGain
+                     oldPlayer.volume = outgoingStartVolume * outGain
                  } catch (e: Exception) { break }
              }
 
@@ -5732,6 +5747,30 @@ automixDeadlineJob?.cancel()
         }
     }
     
+    /**
+     * Gains (incoming, outgoing) at progress t in 0..1 for a DJ transition style.
+     * FADE equal-power crossfade, CUT holds the outgoing track then switches at the end,
+     * SWAP brings the incoming track in over the first half, then drops the outgoing one,
+     * SLOW_IN lets the outgoing track play out while the incoming one rises under it.
+     */
+    private fun djGains(style: String, t: Float): Pair<Float, Float> {
+        val half = (PI.toFloat() / 2f)
+        return when (style) {
+            "CUT" -> if (t < 0.92f) 0f to 1f else 1f to 0f
+            "SWAP" -> {
+                val inG = sin(minOf(t / 0.5f, 1f) * half)
+                val outG = if (t < 0.5f) 1f else cos(((t - 0.5f) / 0.5f) * half)
+                inG to outG
+            }
+            "SLOW_IN" -> {
+                val inG = t * t
+                val outG = if (t < 0.7f) 1f else cos(((t - 0.7f) / 0.3f) * half)
+                inG to outG
+            }
+            else -> sin(t * half) to cos(t * half)
+        }
+    }
+
     private fun cleanupAutomix() {
         outgoingPlayer?.let { oldPlayer ->
             oldPlayer.stop()
@@ -5855,6 +5894,7 @@ automixDeadlineJob?.cancel()
 
         /** Longest automix blend, so a long tail does not become an endless overlap. */
         private const val AUTOMIX_MAX_BLEND_MS = 8_000L
+        private const val DJ_MAX_BLEND_MS = 12_000L
 
         /** Shortest blend worth fading; below this the overlap reads as a click, not a mix. */
         private const val AUTOMIX_MIN_BLEND_MS = 1_500L
