@@ -3847,6 +3847,12 @@ class MusicService :
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
             val mediaId = (dataSpec.key ?: error("No media id")).removeSuffix("_video")
 
+            // TikTok sounds kept on the phone (see TikTokSaver).
+            if (mediaId.startsWith("tt_")) {
+                val f = com.auramusic.app.utils.TikTokSaver.file(filesDir, mediaId)
+                if (f.exists()) return@Factory dataSpec.withUri(android.net.Uri.fromFile(f))
+            }
+
             // If the URI is already a resolved HTTP URL (video mode), pass through
             val uri = dataSpec.uri.toString()
             if (uri.startsWith("https://") && (uri.contains("googlevideo.com") || uri.contains("youtube.com/videoplayback"))) {

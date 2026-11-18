@@ -30,8 +30,12 @@ object PlaylistTextImport {
 
     fun isTikTokLink(text: String) = tiktokRegex.containsMatchIn(text)
 
-    /** Reads the sound of a TikTok video (page metadata, no login) as one song to look up on YouTube Music. */
-    suspend fun fetchTikTok(text: String): Pair<String, List<Song>> = withContext(Dispatchers.IO) {
+    /** The sound of a TikTok video, read from the public page (no login). */
+    data class TikTokSound(val id: String, val title: String, val author: String, val audioUrl: String, val coverUrl: String?, val durationSec: Int) {
+        val isOriginal get() = originalSound.matches(title)
+    }
+
+    suspend fun fetchTikTokSound(text: String): TikTokSound = withContext(Dispatchers.IO) {
         val url = tiktokRegex.find(text)!!.value
         val html = httpGet(url)
         val i = html.indexOf("\"music\":{")
@@ -39,11 +43,21 @@ object PlaylistTextImport {
         val block = html.substring(i, minOf(html.length, i + 4000))
         fun field(k: String) = Regex("\"$k\":\"((?:[^\"\\\\]|\\\\.)*)\"").find(block)?.groupValues?.get(1)
             ?.let { runCatching { JSONObject("{\"v\":\"$it\"}").getString("v") }.getOrDefault(it) }.orEmpty()
+        val id = field("id")
         val title = field("title")
-        val author = field("authorName")
-        if (title.isBlank()) error("Sound not found on this TikTok page")
-        if (originalSound.matches(title)) error("This is an original sound (voice or creator audio), it is not a song on YouTube Music")
-        "TikTok" to listOf(placeholder(title, author))
+        val audio = field("playUrl")
+        if (title.isBlank() || id.isBlank()) error("Sound not found on this TikTok page")
+        val dur = Regex("\"duration\":(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        TikTokSound(id, title, field("authorName"), audio, field("coverLarge").ifBlank { field("coverMedium") }.ifBlank { null }, dur)
+    }
+
+    fun tiktokPlaceholder(s: TikTokSound): Song = placeholder(s.title, s.author)
+
+    /** The sound as one song to look up on YouTube Music (real songs only). */
+    suspend fun fetchTikTok(text: String): Pair<String, List<Song>> {
+        val s = fetchTikTokSound(text)
+        if (s.isOriginal) error("This is an original sound (voice or creator audio), it is not a song on YouTube Music")
+        return "TikTok" to listOf(placeholder(s.title, s.author))
     }
 
     fun isSpotifyLink(text: String) = spotifyRegex.containsMatchIn(text)

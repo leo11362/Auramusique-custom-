@@ -73,6 +73,10 @@ fun BackupAndRestore(
     val textImportScope = rememberCoroutineScope()
     var webImportUrl by remember { mutableStateOf<String?>(null) }
     val importedSongs = remember { mutableStateListOf<Song>() }
+    var tiktokSound by remember { mutableStateOf<PlaylistTextImport.TikTokSound?>(null) }
+    var tiktokSaving by remember { mutableStateOf(false) }
+    val tiktokContext = androidx.compose.ui.platform.LocalContext.current
+    val tiktokDb = com.auramusic.app.LocalDatabase.current
     var showChoosePlaylistDialogOnline by rememberSaveable {
         mutableStateOf(false)
     }
@@ -200,6 +204,51 @@ fun BackupAndRestore(
         }
     )
 
+    tiktokSound?.let { snd ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!tiktokSaving) tiktokSound = null },
+            title = { Text("Son TikTok") },
+            text = {
+                Text(
+                    "${snd.title}${if (snd.author.isNotBlank()) " - ${snd.author}" else ""}\n\n" +
+                        if (snd.isOriginal) "C'est un son original : il n'existe pas sur YouTube Music. Garde le son brut sur le téléphone."
+                        else "Tu peux chercher la vraie chanson sur YouTube Music, ou garder le son brut de la vidéo sur le téléphone.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = !tiktokSaving,
+                    onClick = {
+                        tiktokSaving = true
+                        textImportScope.launch {
+                            runCatching { com.auramusic.app.utils.TikTokSaver.save(tiktokContext, tiktokDb, snd) }
+                                .onSuccess {
+                                    tiktokSound = null
+                                    android.widget.Toast.makeText(tiktokContext, "Son ajouté à la playlist « ${com.auramusic.app.utils.TikTokSaver.PLAYLIST} »", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                                .onFailure { android.widget.Toast.makeText(tiktokContext, "Échec : ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+                            tiktokSaving = false
+                        }
+                    },
+                ) { Text(if (tiktokSaving) "Téléchargement…" else "Garder le son brut") }
+            },
+            dismissButton = {
+                if (!snd.isOriginal) {
+                    androidx.compose.material3.TextButton(
+                        enabled = !tiktokSaving,
+                        onClick = {
+                            importedTitle = "TikTok"
+                            importedSongs.clear()
+                            importedSongs.add(PlaylistTextImport.tiktokPlaceholder(snd))
+                            tiktokSound = null
+                            showChoosePlaylistDialogOnline = true
+                        },
+                    ) { Text("Chercher la chanson") }
+                }
+            },
+        )
+    }
+
     if (showTextImport) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { if (!textImportLoading) showTextImport = false },
@@ -224,6 +273,13 @@ fun BackupAndRestore(
                     onClick = {
                         textImportLoading = true
                         textImportScope.launch {
+                            if (PlaylistTextImport.isTikTokLink(textImportValue)) {
+                                runCatching { PlaylistTextImport.fetchTikTokSound(textImportValue) }
+                                    .onSuccess { tiktokSound = it; showTextImport = false; textImportValue = "" }
+                                    .onFailure { android.widget.Toast.makeText(tiktokContext, "Import failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+                                textImportLoading = false
+                                return@launch
+                            }
                             runCatching {
                                 if (PlaylistTextImport.isDirectLink(textImportValue)) {
                                     val direct = runCatching { PlaylistTextImport.fetchLink(textImportValue) }
