@@ -5328,6 +5328,9 @@ class MusicService :
         automixWarmupJob?.cancel()
         automixWarmupJob = null
         activeTransition = null
+        // A player warmed for an older schedule keeps the old start point and speed: drop it so the
+        // saved transition (possibly just edited) is the one that plays.
+        if (!isAutomixing) secondaryPlayer?.let { releaseAutomixWarmup(it) }
         // A saved DJ transition into the next song plays even when Automix is off.
         val savedTransition = if (player.mediaItemCount > 1) {
             nextAutomixMediaItemIndex().takeIf { it != C.INDEX_UNSET }?.let { transitionForNext(it) }
