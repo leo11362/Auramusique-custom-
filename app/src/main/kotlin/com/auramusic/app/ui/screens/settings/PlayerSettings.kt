@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -127,6 +128,12 @@ fun PlayerSettings(
         AutomixBlendPercentKey,
         defaultValue = 90f
     )
+    val djContext = androidx.compose.ui.platform.LocalContext.current
+    val djDatabase = com.auramusic.app.LocalDatabase.current
+    val djPlayerConnection = com.auramusic.app.LocalPlayerConnection.current
+    val djScope = androidx.compose.runtime.rememberCoroutineScope()
+    var djDemoStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var djDemoBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val (djMode, onDjModeChange) = rememberPreference(DjModeEnabledKey, defaultValue = false)
     val (djBlendSeconds, onDjBlendSecondsChange) = rememberPreference(DjBlendSecondsKey, defaultValue = 6f)
     val (djStyle, onDjStyleChange) = rememberPreference(DjTransitionStyleKey, defaultValue = "FADE")
@@ -410,6 +417,27 @@ fun PlayerSettings(
                         Switch(checked = djMode, onCheckedChange = onDjModeChange)
                     },
                     onClick = { onDjModeChange(!djMode) }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.dj_disc),
+                    title = { Text("Créer la playlist « ${com.auramusic.app.dj.DjDemoPlaylist.NAME} »") },
+                    description = { Text(djDemoStatus ?: "Counting Stars puis Levels, avec la transition de 16 barres déjà prête") },
+                    onClick = {
+                        if (!djDemoBusy) {
+                            djDemoBusy = true
+                            djScope.launch {
+                                djDemoStatus = try {
+                                    val service = djPlayerConnection?.service
+                                        ?: error("Lance d'abord une chanson, puis réessaie.")
+                                    com.auramusic.app.dj.DjDemoPlaylist.create(djContext, djDatabase, service) { djDemoStatus = it }
+                                    "Playlist créée : ouvre-la dans la bibliothèque et lance-la."
+                                } catch (e: Throwable) {
+                                    "Échec : ${e.message ?: e.javaClass.simpleName}"
+                                }
+                                djDemoBusy = false
+                            }
+                        }
+                    }
                 ))
                 if (djMode) {
                     add(Material3SettingsItem(
