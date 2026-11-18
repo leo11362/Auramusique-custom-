@@ -114,6 +114,13 @@ fun NavGraphBuilder.navigationBuilder(
         VideoSearchScreen(navController)
     }
 
+    composable(
+        route = "dj/{songId}",
+        arguments = listOf(navArgument("songId") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        DjScreen(navController, backStackEntry.arguments?.getString("songId").orEmpty())
+    }
+
     composable("listen_together") {
         ListenTogetherScreen(navController)
     }

@@ -3807,6 +3807,9 @@ class MusicService :
         }
     }
 
+    /** A data source reading through the player cache and stream resolution (used by the DJ analysis). */
+    fun createAnalysisDataSource(): DataSource = createDataSourceFactory().createDataSource()
+
     private fun createDataSourceFactory(): DataSource.Factory {
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
             val mediaId = (dataSpec.key ?: error("No media id")).removeSuffix("_video")

@@ -1164,6 +1164,23 @@ fun BottomSheetPlayer(
                             }
                         }
 
+                        // DJ page: BPM, waveform and beat grid of the current song
+                        FilledIconButton(
+                            onClick = { navController.navigate("dj/${mediaMetadata.id}") },
+                            shape = favShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = textButtonColor,
+                                contentColor = iconButtonColor,
+                            ),
+                            modifier = Modifier.size(42.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.dj_disc),
+                                contentDescription = "Mode DJ",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
                         // Voice command button
                         if (enableVoiceCommands) {
                             VoiceCommandButton(
@@ -1819,6 +1836,22 @@ fun BottomSheetPlayer(
                                     painter = painterResource(if (isLiked) R.drawable.favorite else R.drawable.favorite_border),
                                     contentDescription = stringResource(R.string.like),
                                     colorFilter = ColorFilter.tint(if (isLiked) MaterialTheme.colorScheme.error else TextBackgroundColor),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            // DJ page button
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .clickable { navController.navigate("dj/${mediaMetadata.id}") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.dj_disc),
+                                    contentDescription = "Mode DJ",
+                                    colorFilter = ColorFilter.tint(TextBackgroundColor),
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
