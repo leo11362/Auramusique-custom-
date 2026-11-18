@@ -9,6 +9,7 @@ import com.auramusic.app.playback.MusicService
 import com.auramusic.innertube.YouTube
 import com.auramusic.innertube.models.SongItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
@@ -27,7 +28,8 @@ object DjDemoPlaylist {
         database: MusicDatabase,
         service: MusicService,
         onStatus: (String) -> Unit,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = withContext(Dispatchers.IO + NonCancellable) {
+        // NonCancellable: leaving the settings screen must not stop the analysis half way.
         val items = mutableListOf<SongItem>()
         for (q in SONGS) {
             onStatus("Recherche : $q")
