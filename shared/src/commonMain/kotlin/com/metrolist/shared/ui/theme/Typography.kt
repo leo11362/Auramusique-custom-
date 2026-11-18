@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.sp
 import com.metrolist.shared.settings.Settings
 import com.metrolist.shared.settings.resolveAppLanguageTag
 import com.metrolist.shared.state.GlobalYouTube
+import com.metrolist.shared.generated.resources.Res
+import com.metrolist.shared.generated.resources.outfit
+import org.jetbrains.compose.resources.Font
 
 @Composable
 fun currentAppLocaleList(): LocaleList = resolveAppLocaleList(Settings.shared.appLanguage, LocalLocaleList.current)
@@ -37,7 +40,15 @@ expect fun localeAwareSystemFontFamily(languageTag: String): FontFamily
 
 @Composable
 fun MetrolistTypography(localeList: LocaleList = currentAppLocaleList()): Typography {
-    val font = localeAwareSystemFontFamily(localeList[0].toLanguageTag())
+    val font =
+        FontFamily(
+            Font(Res.font.outfit, FontWeight.Light),
+            Font(Res.font.outfit, FontWeight.Normal),
+            Font(Res.font.outfit, FontWeight.Medium),
+            Font(Res.font.outfit, FontWeight.SemiBold),
+            Font(Res.font.outfit, FontWeight.Bold),
+            Font(Res.font.outfit, FontWeight.Black),
+        )
 
     return Typography(
         fontFamily = font,
