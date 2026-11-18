@@ -71,6 +71,7 @@ fun BackupAndRestore(
     var textImportValue by remember { mutableStateOf("") }
     var textImportLoading by remember { mutableStateOf(false) }
     val textImportScope = rememberCoroutineScope()
+    var webImportUrl by remember { mutableStateOf<String?>(null) }
     val importedSongs = remember { mutableStateListOf<Song>() }
     var showChoosePlaylistDialogOnline by rememberSaveable {
         mutableStateOf(false)
@@ -169,7 +170,7 @@ fun BackupAndRestore(
                     }
                 ),
                 Material3SettingsItem(
-                    title = { Text("Import from text or Spotify link") },
+                    title = { Text("Import from a link or text (Spotify, Deezer, Apple Music, Tidal, Amazon)") },
                     icon = painterResource(R.drawable.playlist_add),
                     onClick = { showTextImport = true }
                 ),
@@ -205,7 +206,7 @@ fun BackupAndRestore(
             title = { Text("Import a playlist") },
             text = {
                 androidx.compose.foundation.layout.Column {
-                    Text("Paste a public Spotify playlist/album link, or a list: one \"Artist - Title\" per line.")
+                    Text("Paste a playlist link (Spotify, Deezer, Apple Music, Tidal, Amazon Music), or a list: one \"Artist - Title\" per line. Amazon, and Spotify playlists over 50 titles or private ones, open a login window.")
                     androidx.compose.material3.OutlinedTextField(
                         value = textImportValue,
                         onValueChange = { textImportValue = it },
@@ -224,13 +225,24 @@ fun BackupAndRestore(
                         textImportLoading = true
                         textImportScope.launch {
                             runCatching {
-                                if (PlaylistTextImport.isSpotifyLink(textImportValue)) {
-                                    PlaylistTextImport.fetchSpotify(textImportValue)
+                                if (PlaylistTextImport.isDirectLink(textImportValue)) {
+                                    val direct = runCatching { PlaylistTextImport.fetchLink(textImportValue) }
+                                    val isSpotify = PlaylistTextImport.isSpotifyLink(textImportValue)
+                                    if (isSpotify && (direct.isFailure || direct.getOrThrow().second.size >= 50)) {
+                                        // Embed page stops at ~50 titles and hides private playlists: use the login window.
+                                        webImportUrl = PlaylistTextImport.webViewUrl(textImportValue)
+                                        "Imported playlist" to emptyList()
+                                    } else direct.getOrThrow()
+                                } else if (PlaylistTextImport.webViewUrl(textImportValue) != null) {
+                                    webImportUrl = PlaylistTextImport.webViewUrl(textImportValue)
+                                    "Imported playlist" to emptyList()
                                 } else {
                                     "Imported playlist" to PlaylistTextImport.parseLines(textImportValue)
                                 }
                             }.onSuccess { (name, songs) ->
-                                if (songs.isEmpty()) {
+                                if (webImportUrl != null && songs.isEmpty()) {
+                                    showTextImport = false
+                                } else if (songs.isEmpty()) {
                                     android.widget.Toast.makeText(context, "No songs found", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
                                     importedTitle = name
@@ -253,6 +265,21 @@ fun BackupAndRestore(
                     enabled = !textImportLoading,
                     onClick = { showTextImport = false },
                 ) { Text("Cancel") }
+            },
+        )
+    }
+
+    webImportUrl?.let { u ->
+        WebPlaylistImportDialog(
+            url = u,
+            onDismiss = { webImportUrl = null },
+            onResult = { rows ->
+                importedTitle = if (u.contains("spotify")) "Spotify import" else "Amazon Music import"
+                importedSongs.clear()
+                importedSongs.addAll(PlaylistTextImport.parseScraped(rows))
+                webImportUrl = null
+                textImportValue = ""
+                showChoosePlaylistDialogOnline = true
             },
         )
     }
