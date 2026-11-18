@@ -1166,7 +1166,10 @@ fun BottomSheetPlayer(
 
                         // DJ page: BPM, waveform and beat grid of the current song
                         FilledIconButton(
-                            onClick = { navController.navigate("dj/${mediaMetadata.id}") },
+                            onClick = {
+                                navController.navigate("dj/${mediaMetadata.id}")
+                                state.collapseSoft()
+                            },
                             shape = favShape,
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = textButtonColor,
@@ -1845,7 +1848,10 @@ fun BottomSheetPlayer(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .clickable { navController.navigate("dj/${mediaMetadata.id}") },
+                                    .clickable {
+                                        navController.navigate("dj/${mediaMetadata.id}")
+                                        state.collapseSoft()
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Image(
