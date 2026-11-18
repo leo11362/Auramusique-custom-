@@ -884,6 +884,36 @@ class MusicService :
             }
         }
 
+        // Parts the user cut out of a song (DJ editor): jump over them while it plays.
+        scope.launch {
+            var cutsId: String? = null
+            var cuts = emptyList<com.auramusic.app.dj.DjCut>()
+            while (true) {
+                if (player.isPlaying && !isAutomixing) {
+                    val id = player.currentMediaItem?.mediaId
+                    if (id != cutsId) {
+                        cutsId = id
+                        cuts = if (id == null) emptyList() else com.auramusic.app.dj.DjCuts.load(filesDir, id)
+                    }
+                    if (cuts.isNotEmpty()) {
+                        val pos = player.currentPosition / 1000f
+                        val c = cuts.firstOrNull { pos >= it.start && pos < it.end }
+                        if (c != null) {
+                            val dur = player.duration
+                            runCatching {
+                                if (dur != C.TIME_UNSET && c.end * 1000f >= dur - 500L) {
+                                    if (player.hasNextMediaItem()) player.seekToNext() else player.seekTo(dur)
+                                } else player.seekTo((c.end * 1000f).toLong())
+                            }
+                        }
+                    }
+                } else if (!player.isPlaying) {
+                    cutsId = null // reload after the editor saved changes
+                }
+                delay(150)
+            }
+        }
+
         // Mark player as initialized after successful creation
         playerInitialized.value = true
         Timber.tag(TAG).d("Player successfully initialized")

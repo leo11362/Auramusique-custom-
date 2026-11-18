@@ -14,6 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,6 +63,8 @@ import com.auramusic.app.LocalDatabase
 import com.auramusic.app.LocalPlayerConnection
 import com.auramusic.app.R
 import com.auramusic.app.dj.DjAnalysis
+import com.auramusic.app.dj.DjCut
+import com.auramusic.app.dj.DjCuts
 import com.auramusic.app.dj.DjTransition
 import com.auramusic.app.extensions.toMediaItem
 import com.auramusic.app.playback.queues.ListQueue
@@ -86,6 +94,14 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
     var status by remember { mutableStateOf("Analyse…") }
     var error by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
+    val originalCutsA = remember(fromId) { DjCuts.load(context.filesDir, fromId) }
+    val originalCutsB = remember(toId) { DjCuts.load(context.filesDir, toId) }
+    var cutsA by remember { mutableStateOf(originalCutsA) }
+    var cutsB by remember { mutableStateOf(originalCutsB) }
+    fun saveCuts() {
+        DjCuts.save(context.filesDir, fromId, cutsA)
+        DjCuts.save(context.filesDir, toId, cutsB)
+    }
 
     LaunchedEffect(fromId, toId, attempt) {
         error = null
@@ -122,6 +138,8 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
 
     fun restoreOriginal() {
         if (original != null) DjTransition.save(context.filesDir, original) else DjTransition.delete(context.filesDir, fromId, toId)
+        DjCuts.save(context.filesDir, fromId, originalCutsA)
+        DjCuts.save(context.filesDir, toId, originalCutsB)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -133,7 +151,7 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
             actions = {
                 TextButton(
                     enabled = t != null,
-                    onClick = { t?.let { DjTransition.save(context.filesDir, it) }; navController.navigateUp() },
+                    onClick = { t?.let { DjTransition.save(context.filesDir, it) }; saveCuts(); navController.navigateUp() },
                 ) { Text("Enregistrer") }
             },
         )
@@ -141,7 +159,7 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SongLine(fromSong?.song?.title, fromSong?.artists?.joinToString { it.name }, fromSong?.song?.thumbnailUrl, a)
+            SongLine(fromSong?.song?.title, fromSong?.artists?.joinToString { it.name }, fromSong?.song?.thumbnailUrl, a, cutsA)
             val aa = a
             val bb = b
             val tt = t
@@ -164,6 +182,7 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
                             } else {
                                 // Save the draft first: the player reads the saved transition.
                                 DjTransition.save(context.filesDir, tt)
+                                saveCuts()
                                 val items = listOfNotNull(fromSong?.toMediaItem(), toSong?.toMediaItem())
                                 if (items.size == 2) {
                                     playerConnection?.playQueue(
@@ -178,7 +197,17 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
                     }
                 }
                 BarsPicker(tt.bars) { t = tt.copy(bars = it, preset = "Custom") }
-                SongLine(toSong?.song?.title, toSong?.artists?.joinToString { it.name }, toSong?.song?.thumbnailUrl, bb)
+                SongOverview(
+                    "Chanson 1 en entier", aa, cutsA, tt.aOutSec, tt.aOutSec + tt.durationSec, "Sort à",
+                    onMove = { sec -> t = tt.copy(aOutSec = snapBar(aa, sec), preset = "Custom") },
+                    onCuts = { cutsA = it },
+                )
+                SongOverview(
+                    "Chanson 2 en entier", bb, cutsB, tt.bInSec, tt.bInSec + tt.durationSec * tt.speed, "Entre à",
+                    onMove = { sec -> t = tt.copy(bInSec = snapBar(bb, sec), preset = "Custom") },
+                    onCuts = { cutsB = it },
+                )
+                SongLine(toSong?.song?.title, toSong?.artists?.joinToString { it.name }, toSong?.song?.thumbnailUrl, bb, cutsB)
                 Text("Préréglages", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DjTransition.PRESETS.forEach { name ->
@@ -199,7 +228,9 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
                     }
                 }
                 Text(
-                    "Glisse l'onde du haut ou du bas pour choisir où la transition commence. " +
+                    "Les deux bandes « en entier » montrent toute la chanson avec ses mesures et ses minutes : touche ou glisse pour placer la transition, " +
+                        "ou active « Couper » puis glisse pour retirer un bout (il ne sera plus joué). " +
+                        "Glisse l'onde du haut ou du bas pour choisir où la transition commence. " +
                         "Tire les ronds bleus pour régler les volumes. " +
                         "Rythme : la chanson 2 est jouée à ${"%+.1f".format((tt.speed - 1f) * 100f)} % de sa vitesse pour caler les BPM.",
                     style = MaterialTheme.typography.bodySmall,
@@ -361,7 +392,7 @@ private fun TransitionCanvas(a: DjAnalysis, b: DjAnalysis, t: DjTransition, play
 }
 
 @Composable
-private fun SongLine(title: String?, artist: String?, thumb: String?, a: DjAnalysis?) {
+private fun SongLine(title: String?, artist: String?, thumb: String?, a: DjAnalysis?, cuts: List<DjCut> = emptyList()) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(
             model = thumb, contentDescription = null, contentScale = ContentScale.Crop,
@@ -376,10 +407,142 @@ private fun SongLine(title: String?, artist: String?, thumb: String?, a: DjAnaly
             Column(horizontalAlignment = Alignment.End) {
                 Text("${a.bpm.roundToInt()} bpm", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    "%d:%02d".format(a.durationSec.roundToInt() / 60, a.durationSec.roundToInt() % 60),
+                    if (cuts.isEmpty()) fmtTime(a.durationSec)
+                    else "${fmtTime(a.durationSec)} → ${fmtTime(a.durationSec - DjCuts.removedSec(cuts))}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+private fun fmtTime(sec: Float): String {
+    val s = sec.roundToInt().coerceAtLeast(0)
+    return "%d:%02d".format(s / 60, s % 60)
+}
+
+private fun snapBar(an: DjAnalysis, sec: Float): Float {
+    val bar = an.beatSec * 4f
+    val v = an.firstBeatSec + ((sec - an.firstBeatSec) / bar).roundToInt() * bar
+    return v.coerceIn(0f, an.durationSec)
+}
+
+/**
+ * Whole song: waveform, bar lines, a time axis, the part used by the transition (blue) and the
+ * removed parts (red). Touch or drag moves the transition; in cut mode a drag removes a part.
+ */
+@Composable
+private fun SongOverview(
+    label: String,
+    an: DjAnalysis,
+    cuts: List<DjCut>,
+    useStart: Float,
+    useEnd: Float,
+    verb: String,
+    onMove: (Float) -> Unit,
+    onCuts: (List<DjCut>) -> Unit,
+) {
+    var cutMode by remember { mutableStateOf(false) }
+    var drag by remember { mutableStateOf<DjCut?>(null) }
+    val measurer = rememberTextMeasurer()
+    val waveColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val textStyle = MaterialTheme.typography.labelSmall.copy(color = textColor.copy(alpha = 0.8f))
+    val cutRed = Color(0xFFE5484D)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            Text(
+                "$verb ${fmtTime(useStart)} · fin ${fmtTime(useEnd)}",
+                style = MaterialTheme.typography.labelMedium, color = LineBlue,
+            )
+            Spacer(Modifier.width(8.dp))
+            FilterChip(selected = cutMode, onClick = { cutMode = !cutMode }, label = { Text("✂ Couper") })
+        }
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                .pointerInput(an.songId, cutMode, cuts) {
+                    fun secOf(x: Float) = (x / size.width * an.durationSec).coerceIn(0f, an.durationSec)
+                    if (cutMode) {
+                        var from = 0f
+                        detectDragGestures(
+                            onDragStart = { from = secOf(it.x); drag = DjCut(from, from) },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                val x = secOf(change.position.x)
+                                drag = DjCut(min(from, x), max(from, x))
+                            },
+                            onDragEnd = { drag?.let { onCuts(DjCuts.merge(cuts + it)) }; drag = null },
+                            onDragCancel = { drag = null },
+                        )
+                    } else {
+                        detectDragGestures(
+                            onDragStart = { onMove(secOf(it.x)) },
+                            onDrag = { change, _ -> change.consume(); onMove(secOf(change.position.x)) },
+                        )
+                    }
+                },
+        ) {
+            val w = size.width
+            val h = size.height
+            val axis = 16f
+            val body = h - axis
+            fun xOf(sec: Float) = sec / an.durationSec * w
+            // Used part by the transition.
+            drawRect(LineBlue.copy(alpha = 0.22f), Offset(xOf(useStart), 0f), Size(max(3f, xOf(min(useEnd, an.durationSec)) - xOf(useStart)), body))
+            // Waveform.
+            val perPx = an.waveform.size.toFloat() / w
+            var x = 0f
+            while (x < w) {
+                val v = an.waveform[(x * perPx).toInt().coerceIn(0, an.waveform.size - 1)]
+                val amp = v * (body / 2f - 4f)
+                drawLine(waveColor.copy(alpha = 0.85f), Offset(x, body / 2f - amp), Offset(x, body / 2f + amp), strokeWidth = 2f)
+                x += 3f
+            }
+            // Bar lines: every 4 bars, thicker every 16.
+            val bar = an.beatSec * 4f
+            var k = kotlin.math.ceil((0f - an.firstBeatSec) / bar).toInt()
+            while (true) {
+                val sec = an.firstBeatSec + k * bar
+                if (sec > an.durationSec) break
+                if (k % 4 == 0) {
+                    drawLine(textColor.copy(alpha = if (k % 16 == 0) 0.35f else 0.15f), Offset(xOf(sec), 0f), Offset(xOf(sec), body), strokeWidth = 1f)
+                }
+                k++
+            }
+            // Time axis.
+            val step = listOf(10, 15, 20, 30, 60, 120).firstOrNull { xOf(it.toFloat()) >= 64f } ?: 120
+            var ts = 0
+            while (ts <= an.durationSec) {
+                drawLine(textColor.copy(alpha = 0.5f), Offset(xOf(ts.toFloat()), body), Offset(xOf(ts.toFloat()), body + 4f), strokeWidth = 1.5f)
+                val tx = measurer.measure(fmtTime(ts.toFloat()), textStyle)
+                drawText(tx, topLeft = Offset((xOf(ts.toFloat()) + 2f).coerceAtMost(w - tx.size.width), body + 2f))
+                ts += step
+            }
+            // Cuts.
+            (cuts + listOfNotNull(drag)).forEach {
+                drawRect(cutRed.copy(alpha = 0.45f), Offset(xOf(it.start), 0f), Size(max(2f, xOf(it.end) - xOf(it.start)), body))
+                drawLine(cutRed, Offset(xOf(it.start), 0f), Offset(xOf(it.start), body), strokeWidth = 3f)
+                drawLine(cutRed, Offset(xOf(it.end), 0f), Offset(xOf(it.end), body), strokeWidth = 3f)
+            }
+            // Transition start marker.
+            drawLine(LineBlue, Offset(xOf(useStart), 0f), Offset(xOf(useStart), body), strokeWidth = 5f)
+        }
+        if (cutMode && cuts.isEmpty()) {
+            Text("Glisse le doigt sur la bande pour choisir le bout à retirer.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (cuts.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                cuts.forEach { c ->
+                    OutlinedButton(onClick = { onCuts(cuts - c) }) {
+                        Text("${fmtTime(c.start)}–${fmtTime(c.end)}  ✕", color = cutRed)
+                    }
+                }
             }
         }
     }
