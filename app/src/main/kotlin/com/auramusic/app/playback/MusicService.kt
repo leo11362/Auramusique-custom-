@@ -5381,6 +5381,10 @@ class MusicService :
         return com.auramusic.app.dj.DjTransition.load(filesDir, from, to)
     }
 
+    private fun djToast(msg: String) {
+        scope.launch(Dispatchers.Main) { android.widget.Toast.makeText(this@MusicService, msg, android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     private fun scheduleAutomix() {
         automixTriggerJob?.cancel()
         automixTriggerJob = null
@@ -5444,7 +5448,10 @@ class MusicService :
             if (savedTransition != null) (savedTransition.aOutSec * 1000f).toLong().coerceAtMost(player.duration - 1000L)
             else if (djMode) player.duration - blendMs else minOf(triggerOffset, player.duration - blendMs)
         val triggerDelayMs = triggerTime - player.currentPosition
-        if (triggerDelayMs <= 0) return
+        if (triggerDelayMs <= 0) {
+            if (savedTransition != null) djToast("Transition : le point de sortie est déjà passé")
+            return
+        }
 
         val targetMediaId = player.currentMediaItem?.mediaId
 
@@ -5467,7 +5474,10 @@ class MusicService :
         // buffer all move it instead of letting it fire at the wrong moment mid-song.
         automixTriggerMessage = player.createMessage { _, _ ->
             if (player.isPlaying && player.currentMediaItem?.mediaId == targetMediaId && (automixEnabled || activeTransition != null)) {
+                if (activeTransition != null) djToast("Transition DJ lancée")
                 startAutomix()
+            } else if (activeTransition != null) {
+                djToast("Transition non lancée : lecture en pause ou chanson changée")
             }
             automixTriggerMessage = null
         }.apply {
@@ -5609,7 +5619,8 @@ class MusicService :
         // Record current song to history before automix swap
         recordCurrentSongToHistory()
 
-        val blendMs = resolveBlendDurationMs()
+        // A saved DJ transition has its own length (bars); the generic blend is capped at 8-12 s.
+        val blendMs = activeTransition?.durationMs ?: resolveBlendDurationMs()
 
         // Reuse the player prepared during warmup so the blend starts on time. Fall back to
         // building it here if warmup did not run or already failed. Either way the player is
