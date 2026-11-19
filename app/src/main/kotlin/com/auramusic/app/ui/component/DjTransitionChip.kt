@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +43,12 @@ fun DjTransitionChip(fromId: String, toId: String, onClick: () -> Unit) {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     val t = remember(fromId, toId, version) { DjTransition.load(context.filesDir, fromId, toId) }
-    Box(Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+    // Zero-height box: the pill floats over the boundary between the two songs, so they stay stuck together.
+    Box(
+        Modifier.fillMaxWidth().height(0.dp).wrapContentHeight(align = Alignment.CenterVertically, unbounded = true)
+            .padding(end = 56.dp),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
         Surface(
             onClick = onClick,
             shape = RoundedCornerShape(50),
@@ -50,14 +57,14 @@ fun DjTransitionChip(fromId: String, toId: String, onClick: () -> Unit) {
             border = if (t == null) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
         ) {
             Row(
-                Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(painterResource(R.drawable.dj_disc), contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(painterResource(R.drawable.dj_disc), contentDescription = null, modifier = Modifier.size(12.dp))
                 Text(
-                    if (t != null) "Transition · ${t.bars} bars · ${t.preset}" else "Ajouter une transition",
-                    style = MaterialTheme.typography.labelMedium,
+                    if (t != null) "${t.bars} bars · ${t.preset}" else "Transition",
+                    style = MaterialTheme.typography.labelSmall,
                 )
             }
         }
