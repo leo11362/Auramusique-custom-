@@ -3979,7 +3979,7 @@ class MusicService :
         DefaultMediaSourceFactory(
             createDataSourceFactory(),
             ExtractorsFactory {
-                arrayOf(MatroskaExtractor(), FragmentedMp4Extractor(), Mp4Extractor())
+                arrayOf(MatroskaExtractor(), FragmentedMp4Extractor(), Mp4Extractor(), androidx.media3.extractor.mp3.Mp3Extractor())
             },
         )
 
@@ -5155,7 +5155,8 @@ class MusicService :
                                                 arrayOf(
                                                     MatroskaExtractor(),
                                                     FragmentedMp4Extractor(),
-                                                    Mp4Extractor()
+                                                    Mp4Extractor(),
+                                                    androidx.media3.extractor.mp3.Mp3Extractor()
                                                 )
                                             }
                                         )
