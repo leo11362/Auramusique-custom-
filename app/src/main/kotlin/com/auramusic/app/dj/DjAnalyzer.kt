@@ -102,7 +102,12 @@ object DjAnalyzer {
     private suspend fun download(newSource: () -> DataSource, songId: String, out: File) {
         val workers = 4
         out.outputStream().use { os ->
-            var next = 0L
+            // First chunk alone: it resolves and caches the stream URL, so every later chunk (fetched in
+            // parallel) comes from the very same file instead of each resolving its own format.
+            val first = fetchChunk(newSource(), songId, 0L)
+            os.write(first)
+            if (first.size < CHUNK) return
+            var next = 1L
             while (true) {
                 coroutineContext.ensureActive()
                 val batch = kotlinx.coroutines.coroutineScope {
