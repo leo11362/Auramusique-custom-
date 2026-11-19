@@ -68,6 +68,7 @@ import com.auramusic.app.dj.DjCuts
 import com.auramusic.app.dj.DjTransition
 import com.auramusic.app.extensions.toMediaItem
 import com.auramusic.app.playback.queues.ListQueue
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -106,9 +107,12 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
     LaunchedEffect(fromId, toId, attempt) {
         error = null
         try {
-            val x = loadDjAnalysis(context, playerConnection, fromId) { status = "Chanson 1 : $it" }
+            val (x, y) = kotlinx.coroutines.coroutineScope {
+                val dx = async { loadDjAnalysis(context, playerConnection, fromId) { status = "Chanson 1 : $it" } }
+                val dy = async { loadDjAnalysis(context, playerConnection, toId) { status = "Chanson 2 : $it" } }
+                dx.await() to dy.await()
+            }
             a = x
-            val y = loadDjAnalysis(context, playerConnection, toId) { status = "Chanson 2 : $it" }
             b = y
             if (t == null) t = original ?: DjTransition.auto(x, y)
         } catch (e: kotlinx.coroutines.CancellationException) {

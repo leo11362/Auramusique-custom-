@@ -45,7 +45,7 @@ object DjDemoPlaylist {
 
         val analyses = items.mapIndexed { i, s ->
             onStatus("Analyse ${i + 1}/2 : ${s.title}")
-            DjAnalyzer.analyze(s.id, context.filesDir, service.createAnalysisDataSource()) { onStatus("Analyse ${i + 1}/2 : $it") }
+            DjAnalyzer.analyze(s.id, context.filesDir, { service.createAnalysisDataSource() }) { onStatus("Analyse ${i + 1}/2 : $it") }
         }
         val t = DjTransition.auto(analyses[0], analyses[1], preset = "Fade", bars = 16)
         DjTransition.save(context.filesDir, t)

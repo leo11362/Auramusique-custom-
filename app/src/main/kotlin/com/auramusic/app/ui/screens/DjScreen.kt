@@ -75,7 +75,7 @@ internal suspend fun loadDjAnalysis(
     DjAnalyzer.load(context.filesDir, songId)?.let { return it }
     val service = playerConnection?.service
         ?: error("Le lecteur n'est pas prêt. Lance une chanson puis réessaie.")
-    return DjAnalyzer.analyze(songId, context.filesDir, service.createAnalysisDataSource(), onStatus)
+    return DjAnalyzer.analyze(songId, context.filesDir, { service.createAnalysisDataSource() }, onStatus)
 }
 
 @kotlin.OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
@@ -101,7 +101,7 @@ fun DjScreen(navController: NavController, songId: String) {
                 return@LaunchedEffect
             }
             try {
-                analysis = DjAnalyzer.analyze(songId, context.filesDir, service.createAnalysisDataSource()) { status = it }
+                analysis = DjAnalyzer.analyze(songId, context.filesDir, { service.createAnalysisDataSource() }) { status = it }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {

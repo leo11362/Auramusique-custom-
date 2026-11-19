@@ -8,6 +8,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -75,14 +77,14 @@ object DjAnalyzer {
     suspend fun analyze(
         songId: String,
         dir: File,
-        dataSource: DataSource,
+        newSource: () -> DataSource,
         onProgress: (String) -> Unit = {},
     ): DjAnalysis = withContext(Dispatchers.IO) {
         load(dir, songId)?.let { return@withContext it }
         val tmp = File(dir, "dj_tmp_${System.nanoTime()}.audio")
         try {
             onProgress("Lecture de la chanson…")
-            download(dataSource, songId, tmp)
+            download(newSource, songId, tmp)
             onProgress("Analyse du rythme…")
             val pcm = decode(tmp)
             val result = analyzePcm(songId, pcm.samples, pcm.rate)
@@ -96,34 +98,50 @@ object DjAnalyzer {
     /** Same chunk size the player asks for: the data source resolves the stream URL per chunk. */
     private const val CHUNK = 512 * 1024L
 
-    private suspend fun download(source: DataSource, songId: String, out: File) {
+    /** Fetches [PARALLEL] chunks at a time, each with its own data source, and writes them in order. */
+    private suspend fun download(newSource: () -> DataSource, songId: String, out: File) {
+        val workers = 4
         out.outputStream().use { os ->
-            val buf = ByteArray(64 * 1024)
-            var pos = 0L
+            var next = 0L
             while (true) {
                 coroutineContext.ensureActive()
-                var got = 0L
-                try {
-                    source.open(
-                        // No length, like the player: the resolver then bounds the request to one chunk.
-                        DataSpec.Builder().setUri(songId.toUri()).setKey(songId).setPosition(pos).build(),
-                    )
-                    while (got < CHUNK) {
-                        val n = source.read(buf, 0, minOf(buf.size.toLong(), CHUNK - got).toInt())
-                        if (n < 0) break
-                        os.write(buf, 0, n)
-                        got += n
-                    }
-                } catch (e: java.io.IOException) {
-                    // Asking past the end of the file (exact multiple of the chunk size) means done.
-                    if (pos > 0L && got == 0L) return else throw e
-                } finally {
-                    runCatching { source.close() }
+                val batch = kotlinx.coroutines.coroutineScope {
+                    (0 until workers).map { k ->
+                        val pos = (next + k) * CHUNK
+                        async { fetchChunk(newSource(), songId, pos) }
+                    }.awaitAll()
                 }
-                pos += got
-                if (got < CHUNK) return
+                var ended = false
+                for (bytes in batch) {
+                    os.write(bytes)
+                    if (bytes.size < CHUNK) { ended = true; break }
+                }
+                if (ended) return
+                next += workers
             }
         }
+    }
+
+    private fun fetchChunk(source: DataSource, songId: String, pos: Long): ByteArray {
+        val bos = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var got = 0L
+        try {
+            // No length, like the player: the resolver then bounds the request to one chunk.
+            source.open(DataSpec.Builder().setUri(songId.toUri()).setKey(songId).setPosition(pos).build())
+            while (got < CHUNK) {
+                val n = source.read(buf, 0, minOf(buf.size.toLong(), CHUNK - got).toInt())
+                if (n < 0) break
+                bos.write(buf, 0, n)
+                got += n
+            }
+        } catch (e: java.io.IOException) {
+            // Asking past the end of the file (exact multiple of the chunk size) means done.
+            if (pos > 0L && got == 0L) return ByteArray(0) else throw e
+        } finally {
+            runCatching { source.close() }
+        }
+        return bos.toByteArray()
     }
 
     private class Pcm(val samples: FloatArray, val rate: Int)
