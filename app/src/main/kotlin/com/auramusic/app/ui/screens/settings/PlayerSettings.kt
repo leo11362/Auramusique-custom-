@@ -133,6 +133,8 @@ fun PlayerSettings(
     val djPlayerConnection = com.auramusic.app.LocalPlayerConnection.current
     val djScope = androidx.compose.runtime.rememberCoroutineScope()
     var djDemoStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var djMashStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var djMashBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var djDemoBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val (djMode, onDjModeChange) = rememberPreference(DjModeEnabledKey, defaultValue = false)
     val (djBlendSeconds, onDjBlendSecondsChange) = rememberPreference(DjBlendSecondsKey, defaultValue = 6f)
@@ -435,6 +437,27 @@ fun PlayerSettings(
                                     "Échec : ${e.message ?: e.javaClass.simpleName}"
                                 }
                                 djDemoBusy = false
+                            }
+                        }
+                    }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.dj_disc),
+                    title = { Text("Créer la playlist « ${com.auramusic.app.dj.DjDemoPlaylist.MASHUP_NAME} »") },
+                    description = { Text(djMashStatus ?: "Turn Down for What puis Crazy in Love, transition de 8 barres comme sur ta capture") },
+                    onClick = {
+                        if (!djMashBusy) {
+                            djMashBusy = true
+                            djScope.launch {
+                                djMashStatus = try {
+                                    val service = djPlayerConnection?.service
+                                        ?: error("Lance d'abord une chanson, puis réessaie.")
+                                    com.auramusic.app.dj.DjDemoPlaylist.create(djContext, djDatabase, service, com.auramusic.app.dj.DjDemoPlaylist.MASHUP) { djMashStatus = it }
+                                    "Playlist créée : ouvre-la dans la bibliothèque et lance-la."
+                                } catch (e: Throwable) {
+                                    "Échec : ${e.message ?: e.javaClass.simpleName}"
+                                }
+                                djMashBusy = false
                             }
                         }
                     }
