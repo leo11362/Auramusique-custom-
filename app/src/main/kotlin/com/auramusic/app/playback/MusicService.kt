@@ -2731,6 +2731,7 @@ class MusicService :
         mediaItem: MediaItem?,
         reason: Int,
     ) {
+        preAnalyzeSongs()
         // Skip transitions triggered by our own MergingMediaSource injection.
         // The merged source has MediaItem.EMPTY which would cause false "new
         // song" detection and resetVideoMode(), destroying ongoing video switch
@@ -5379,6 +5380,28 @@ class MusicService :
         val from = player.currentMediaItem?.mediaId ?: return null
         val to = player.getMediaItemAt(nextIndex).mediaId
         return com.auramusic.app.dj.DjTransition.load(filesDir, from, to)
+    }
+
+    private val preAnalysisMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** Analyses the playing song and the next two in the background (Wi-Fi only) so the DJ editor opens at once. */
+    private fun preAnalyzeSongs() {
+        val ids = (0 until minOf(3, player.mediaItemCount - player.currentMediaItemIndex)).mapNotNull {
+            runCatching { player.getMediaItemAt(player.currentMediaItemIndex + it) }.getOrNull()
+                ?.takeIf { it.metadata?.isVideoSong != true }?.mediaId
+        }
+        if (ids.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            for (id in ids) {
+                if (com.auramusic.app.dj.DjAnalyzer.load(filesDir, id) != null) continue
+                if (connectivityManager.isActiveNetworkMetered) return@launch
+                preAnalysisMutex.withLock {
+                    runCatching {
+                        com.auramusic.app.dj.DjAnalyzer.analyze(id, filesDir, { createAnalysisDataSource() })
+                    }.onFailure { Timber.tag(TAG).w(it, "pre-analysis failed for $id") }
+                }
+            }
+        }
     }
 
     private fun djToast(msg: String) {

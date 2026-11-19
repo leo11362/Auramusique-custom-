@@ -74,11 +74,38 @@ object DjAnalyzer {
     fun load(dir: File, songId: String): DjAnalysis? =
         cacheFile(dir, songId).takeIf { it.exists() }?.readText()?.let(DjAnalysis::fromJson)
 
+    private val inflight = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Deferred<DjAnalysis>>()
+    private val bg = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * One analysis per song at a time: the editor and the background pre-analysis join the same job,
+     * and leaving a screen no longer cancels it.
+     */
     suspend fun analyze(
         songId: String,
         dir: File,
         newSource: () -> DataSource,
         onProgress: (String) -> Unit = {},
+    ): DjAnalysis {
+        load(dir, songId)?.let { return it }
+        val job = inflight.computeIfAbsent(songId) {
+            bg.async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                try {
+                    analyzeNow(songId, dir, newSource, onProgress)
+                } finally {
+                    inflight.remove(songId)
+                }
+            }
+        }
+        job.start()
+        return job.await()
+    }
+
+    private suspend fun analyzeNow(
+        songId: String,
+        dir: File,
+        newSource: () -> DataSource,
+        onProgress: (String) -> Unit,
     ): DjAnalysis = withContext(Dispatchers.IO) {
         load(dir, songId)?.let { return@withContext it }
         val tmp = File(dir, "dj_tmp_${System.nanoTime()}.audio")
@@ -98,17 +125,30 @@ object DjAnalyzer {
     /** Same chunk size the player asks for: the data source resolves the stream URL per chunk. */
     private const val CHUNK = 512 * 1024L
 
-    /** Sequential, one data source: parallel chunks could land on different stream formats and corrupt the file. */
+    /**
+     * First chunk alone (it resolves the stream URL once, shared through the service), then 4 chunks at a
+     * time. Every chunk comes straight from the network from that same URL, so one format per song.
+     */
     private suspend fun download(newSource: () -> DataSource, songId: String, out: File) {
-        val source = newSource()
+        val workers = 4
         out.outputStream().use { os ->
-            var pos = 0L
+            val first = fetchChunk(newSource(), songId, 0L)
+            os.write(first)
+            if (first.size < CHUNK) return
+            var next = 1L
             while (true) {
                 coroutineContext.ensureActive()
-                val bytes = fetchChunk(source, songId, pos)
-                os.write(bytes)
-                if (bytes.size < CHUNK) return
-                pos += bytes.size
+                val batch = kotlinx.coroutines.coroutineScope {
+                    (0 until workers).map { k ->
+                        val pos = (next + k) * CHUNK
+                        async { fetchChunk(newSource(), songId, pos) }
+                    }.awaitAll()
+                }
+                for (bytes in batch) {
+                    os.write(bytes)
+                    if (bytes.size < CHUNK) return
+                }
+                next += workers
             }
         }
     }
