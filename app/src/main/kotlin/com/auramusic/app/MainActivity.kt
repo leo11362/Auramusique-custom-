@@ -538,7 +538,12 @@ class MainActivity : ComponentActivity() {
                             // If there's a new version available, show notification
                             if (hasUpdate && notifEnabled) {
                                 val downloadUrl = Updater.getDownloadUrlForCurrentVariant(releaseInfo, preferredVariant, preferredArchitecture)
-                                if (downloadUrl != null) {
+                                if (downloadUrl != null && com.auramusic.app.utils.UpdateInstaller.downloadAndInstall(
+                                        this@MainActivity, downloadUrl, normalizedVersion,
+                                    )
+                                ) {
+                                    // Handed to the system installer: no browser, no manual download.
+                                } else if (downloadUrl != null) {
                                     val intent = Intent(Intent.ACTION_VIEW, downloadUrl.toUri())
 
                                     val flags = PendingIntent.FLAG_UPDATE_CURRENT or
