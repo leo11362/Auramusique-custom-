@@ -891,16 +891,21 @@ class MusicService :
             }
         }
 
-        // A cached chunk whose file vanished (ENOENT) makes a song unplayable until the cache is cleared:
+        // A cached chunk whose file vanished (ENOENT), or whose recorded length no longer fits the stream
+        // (position out of range, malformed container), makes a song unplayable until the cache is cleared:
         // drop that song's cache entry and try once more.
         var cacheRetryId: String? = null
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 val id = player.currentMediaItem?.mediaId ?: return
-                if (error.errorCode != PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND || id.startsWith("tt_")) return
+                val repairable = error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
+                    error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
+                if (!repairable || id.startsWith("tt_")) return
                 if (cacheRetryId == id) return
                 cacheRetryId = id
                 runCatching { playerCache.removeResource(id) }
+                songUrlCache.remove(id)
                 val pos = player.currentPosition
                 player.seekTo(player.currentMediaItemIndex, pos)
                 player.prepare()
