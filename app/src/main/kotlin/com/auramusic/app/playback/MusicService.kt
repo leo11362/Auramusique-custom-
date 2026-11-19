@@ -884,6 +884,24 @@ class MusicService :
             }
         }
 
+        // A cached chunk whose file vanished (ENOENT) makes a song unplayable until the cache is cleared:
+        // drop that song's cache entry and try once more.
+        var cacheRetryId: String? = null
+        player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                val id = player.currentMediaItem?.mediaId ?: return
+                if (error.errorCode != PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND || id.startsWith("tt_")) return
+                if (cacheRetryId == id) return
+                cacheRetryId = id
+                runCatching { playerCache.removeResource(id) }
+                val pos = player.currentPosition
+                player.seekTo(player.currentMediaItemIndex, pos)
+                player.prepare()
+                player.play()
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { cacheRetryId = null }
+        })
+
         // Parts the user cut out of a song (DJ editor): jump over them while it plays.
         scope.launch {
             var cutsId: String? = null
