@@ -189,6 +189,8 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
                                 saveCuts()
                                 val items = listOfNotNull(fromSong?.toMediaItem(), toSong?.toMediaItem())
                                 if (items.size == 2) {
+                                    // Repeat-one replays the song instead of moving on, so no transition could ever start.
+                                    playerConnection?.player?.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
                                     playerConnection?.playQueue(
                                         ListQueue(title = "Transition", items = items, position = max(0L, (tt.aOutSec * 1000f).toLong() - 6000L)),
                                     )
