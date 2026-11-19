@@ -3859,7 +3859,42 @@ class MusicService :
     }
 
     /** A data source reading through the player cache and stream resolution (used by the DJ analysis). */
-    fun createAnalysisDataSource(): DataSource = createDataSourceFactory().createDataSource()
+    private val analysisUrls = HashMap<String, StreamUrlEntry>()
+
+    /**
+     * Data source for the DJ analysis: straight from the network (own resolved URL, one format per song),
+     * never through the player cache, whose partly cached songs could mix several formats into one file.
+     */
+    fun createAnalysisDataSource(): DataSource {
+        val client = OkHttpClient.Builder().proxy(YouTube.proxy).build()
+        val upstream = DefaultDataSource.Factory(this, OkHttpDataSource.Factory(client))
+        return ResolvingDataSource.Factory(upstream) { dataSpec ->
+            val mediaId = (dataSpec.key ?: error("No media id")).removeSuffix("_video")
+            if (mediaId.startsWith("tt_")) {
+                val f = com.auramusic.app.utils.TikTokSaver.file(filesDir, mediaId)
+                if (f.exists()) return@Factory dataSpec.withUri(android.net.Uri.fromFile(f))
+            }
+            val entry = synchronized(analysisUrls) {
+                analysisUrls[mediaId]?.takeIf { it.expiresAtMs > System.currentTimeMillis() }
+                    ?: run {
+                        val data = runBlocking(Dispatchers.IO) {
+                            YTPlayerUtils.playerResponseForPlayback(
+                                mediaId,
+                                audioQuality = audioQuality,
+                                connectivityManager = connectivityManager,
+                                poTokenProvider = poTokenProvider,
+                            )
+                        }.getOrThrow() ?: error(getString(R.string.error_unknown))
+                        StreamUrlEntry(data.streamUrl, System.currentTimeMillis() + 10 * 60_000L, data.streamHeaders)
+                            .also { analysisUrls[mediaId] = it }
+                    }
+            }
+            // Range bounded to one chunk, as the player does (the server refuses huge open ranges).
+            dataSpec.withUri(entry.url.toUri())
+                .withRequestHeaders(entry.headers)
+                .subrange(0, CHUNK_LENGTH) // offset is relative to dataSpec.position
+        }.createDataSource()
+    }
 
     private fun createDataSourceFactory(): DataSource.Factory {
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
