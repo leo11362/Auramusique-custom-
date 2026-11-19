@@ -5393,7 +5393,7 @@ class MusicService :
     private fun preAnalyzeSongs() {
         val ids = (0 until minOf(3, player.mediaItemCount - player.currentMediaItemIndex)).mapNotNull {
             runCatching { player.getMediaItemAt(player.currentMediaItemIndex + it) }.getOrNull()
-                ?.takeIf { it.metadata?.isVideoSong != true }?.mediaId
+                ?.mediaId
         }
         if (ids.isEmpty()) return
         scope.launch(Dispatchers.IO) {
@@ -5410,6 +5410,7 @@ class MusicService :
     }
 
     private fun djToast(msg: String) {
+        android.util.Log.i("DJ", msg)
         scope.launch(Dispatchers.Main) { android.widget.Toast.makeText(this@MusicService, msg, android.widget.Toast.LENGTH_SHORT).show() }
     }
 
@@ -5459,7 +5460,9 @@ class MusicService :
         if (nextIndex == C.INDEX_UNSET) return
         // Never crossfade/automix into a video-backed song: it must play natively so
         // onMediaItemTransition routes it through video mode and SponsorBlock works.
-        if (player.getMediaItemAt(nextIndex).metadata?.isVideoSong == true) {
+        // (A saved DJ transition still plays into a video-type upload such as "Official Audio": it is
+        // played as audio here, video mode itself was ruled out above.)
+        if (savedTransition == null && player.getMediaItemAt(nextIndex).metadata?.isVideoSong == true) {
             Timber.d("scheduleAutomix: Skipping automix into video song")
             return
         }
@@ -5587,7 +5590,7 @@ class MusicService :
         if ((!automixEnabled && activeTransition == null) || player.repeatMode == REPEAT_MODE_ONE) return
 
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
-        if (player.getMediaItemAt(nextIndex).metadata?.isVideoSong == true) return
+        if (activeTransition == null && player.getMediaItemAt(nextIndex).metadata?.isVideoSong == true) return
 
         val warmedPlayer = createExoPlayer(publishPlayer = false)
         val items = ArrayList<MediaItem>(player.mediaItemCount)
