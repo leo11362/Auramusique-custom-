@@ -98,31 +98,17 @@ object DjAnalyzer {
     /** Same chunk size the player asks for: the data source resolves the stream URL per chunk. */
     private const val CHUNK = 512 * 1024L
 
-    /** Fetches [PARALLEL] chunks at a time, each with its own data source, and writes them in order. */
+    /** Sequential, one data source: parallel chunks could land on different stream formats and corrupt the file. */
     private suspend fun download(newSource: () -> DataSource, songId: String, out: File) {
-        val workers = 4
+        val source = newSource()
         out.outputStream().use { os ->
-            // First chunk alone: it resolves and caches the stream URL, so every later chunk (fetched in
-            // parallel) comes from the very same file instead of each resolving its own format.
-            val first = fetchChunk(newSource(), songId, 0L)
-            os.write(first)
-            if (first.size < CHUNK) return
-            var next = 1L
+            var pos = 0L
             while (true) {
                 coroutineContext.ensureActive()
-                val batch = kotlinx.coroutines.coroutineScope {
-                    (0 until workers).map { k ->
-                        val pos = (next + k) * CHUNK
-                        async { fetchChunk(newSource(), songId, pos) }
-                    }.awaitAll()
-                }
-                var ended = false
-                for (bytes in batch) {
-                    os.write(bytes)
-                    if (bytes.size < CHUNK) { ended = true; break }
-                }
-                if (ended) return
-                next += workers
+                val bytes = fetchChunk(source, songId, pos)
+                os.write(bytes)
+                if (bytes.size < CHUNK) return
+                pos += bytes.size
             }
         }
     }
@@ -155,9 +141,9 @@ object DjAnalyzer {
     private suspend fun decode(file: File): Pcm {
         val ex = MediaExtractor()
         ex.setDataSource(file.absolutePath)
-        val track = (0 until ex.trackCount).first {
+        val track = (0 until ex.trackCount).firstOrNull {
             ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-        }
+        } ?: throw IllegalStateException("Fichier audio illisible (${file.length() / 1024} Ko, ${ex.trackCount} pistes)")
         ex.selectTrack(track)
         val fmt = ex.getTrackFormat(track)
         val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
