@@ -5718,6 +5718,7 @@ class MusicService :
                 }
                 if (secondaryPlayer === secPlayer) secondaryPlayer = null
                 Timber.tag(TAG).w(error, "Automix blend aborted, incoming track failed to start")
+                if (activeTransition != null) djToast("Transition annulée : erreur de lecture de la chanson 2 (${error.errorCodeName})")
             }
         }
         secPlayer.addListener(readyListener)
@@ -5744,6 +5745,7 @@ class MusicService :
             // Give up on the blend. Restore secondaryPlayer bookkeeping so the next song
             // transitions naturally instead of leaving a dangling player.
             Timber.tag(TAG).w("Automix blend timed out after ${AUTOMIX_BLEND_DEADLINE_MS}ms")
+            if (activeTransition != null) djToast("Transition annulée : la chanson 2 n'était pas prête après 6 s")
             secPlayer.removeListener(secondaryPlayerListener)
             playerSilenceProcessors.remove(secPlayer)
             runCatching {
@@ -5772,6 +5774,7 @@ class MusicService :
         val nextPlayer = secondaryPlayer ?: return
         val oldPlayer = player
         isAutomixing = true
+        activeTransition?.let { djToast("Mélange : ${(it.durationMs / 1000)} s, chanson 2 à ${it.bInSec.toInt()} s, vitesse ${"%.2f".format(it.speed)}") }
 
         nextPlayer.removeListener(secondaryPlayerListener)
         nextPlayer.addListener(this)
@@ -5856,6 +5859,7 @@ automixDeadlineJob?.cancel()
                  if (!isActive) break
                  if (!nextPlayer.isPlaying) {
                      Timber.tag(TAG).w("Incoming track never started, ending blend early")
+                     if (transition != null) djToast("Transition : la chanson 2 ne démarre pas")
                      break
                  }
 
