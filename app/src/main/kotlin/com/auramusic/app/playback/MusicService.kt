@@ -712,6 +712,13 @@ class MusicService :
         super.onCreate()
         isRunning = true
 
+        // Mixes described on GitHub (see dj/DjMixSync.kt): applied once, a while after start-up.
+        scope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(20_000)
+            runCatching { com.auramusic.app.dj.DjMixSync.sync(this@MusicService, database, this@MusicService) }
+                .onFailure { Timber.tag(TAG).w(it, "DjMixSync failed") }
+        }
+
         setListener(
             object : MediaSessionService.Listener {
                 override fun onForegroundServiceStartNotAllowedException() {

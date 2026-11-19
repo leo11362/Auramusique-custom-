@@ -135,6 +135,7 @@ fun PlayerSettings(
     var djDemoStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var djMashStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var djMashBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var djSyncStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var djDemoBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val (djMode, onDjModeChange) = rememberPreference(DjModeEnabledKey, defaultValue = false)
     val (djBlendSeconds, onDjBlendSecondsChange) = rememberPreference(DjBlendSecondsKey, defaultValue = 6f)
@@ -458,6 +459,22 @@ fun PlayerSettings(
                                     "Échec : ${e.message ?: e.javaClass.simpleName}"
                                 }
                                 djMashBusy = false
+                            }
+                        }
+                    }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.dj_disc),
+                    title = { Text("Synchroniser les mix") },
+                    description = { Text(djSyncStatus ?: "Récupère les playlists + transitions préparées pour toi") },
+                    onClick = {
+                        djScope.launch {
+                            djSyncStatus = try {
+                                val service = djPlayerConnection?.service
+                                    ?: error("Lance d'abord une chanson, puis réessaie.")
+                                com.auramusic.app.dj.DjMixSync.sync(djContext, djDatabase, service) { djSyncStatus = it }
+                            } catch (e: Throwable) {
+                                "Échec : ${e.message ?: e.javaClass.simpleName}"
                             }
                         }
                     }
