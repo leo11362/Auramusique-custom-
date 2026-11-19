@@ -125,11 +125,13 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
     // Playhead (seconds into the transition) while the preview or the real playback runs.
     var playhead by remember { mutableStateOf<Float?>(null) }
     var playing by remember { mutableStateOf(false) }
+    var previewOn by remember { mutableStateOf(false) }
     LaunchedEffect(fromId, toId) {
         while (true) {
             val p = playerConnection?.player
             val cur = t
             playing = p?.isPlaying == true
+            if (p != null && p.currentMediaItem?.mediaId.let { it != fromId && it != toId }) previewOn = false
             playhead = when {
                 cur == null || p == null -> null
                 p.currentMediaItem?.mediaId == fromId -> p.currentPosition / 1000f - cur.aOutSec
@@ -138,6 +140,29 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
             }
             delay(50)
         }
+    }
+
+    fun startPreview(tt: DjTransition) {
+        // Save the draft first: the player reads the saved transition.
+        DjTransition.save(context.filesDir, tt)
+        saveCuts()
+        val items = listOfNotNull(fromSong?.toMediaItem(), toSong?.toMediaItem())
+        if (items.size == 2) {
+            // Repeat-one replays the song instead of moving on, so no transition could ever start.
+            playerConnection?.player?.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+            playerConnection?.playQueue(
+                ListQueue(title = "Transition", items = items, position = max(0L, (tt.aOutSec * 1000f).toLong() - 6000L)),
+            )
+            previewOn = true
+        }
+    }
+    // The preview plays the saved transition: when something changes while it plays, restart it with the new
+    // settings so what is heard is what was just set.
+    LaunchedEffect(t, cutsA, cutsB) {
+        val cur = t ?: return@LaunchedEffect
+        if (!previewOn) return@LaunchedEffect
+        delay(700)
+        if (previewOn) startPreview(cur)
     }
 
     fun restoreOriginal() {
@@ -182,19 +207,10 @@ fun DjMixScreen(navController: NavController, fromId: String, toId: String) {
                     FilledIconButton(
                         onClick = {
                             if (playing) {
+                                previewOn = false
                                 playerConnection?.player?.pause()
                             } else {
-                                // Save the draft first: the player reads the saved transition.
-                                DjTransition.save(context.filesDir, tt)
-                                saveCuts()
-                                val items = listOfNotNull(fromSong?.toMediaItem(), toSong?.toMediaItem())
-                                if (items.size == 2) {
-                                    // Repeat-one replays the song instead of moving on, so no transition could ever start.
-                                    playerConnection?.player?.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
-                                    playerConnection?.playQueue(
-                                        ListQueue(title = "Transition", items = items, position = max(0L, (tt.aOutSec * 1000f).toLong() - 6000L)),
-                                    )
-                                }
+                                startPreview(tt)
                             }
                         },
                         modifier = Modifier.align(Alignment.Center).size(56.dp),
@@ -281,7 +297,7 @@ private fun TransitionCanvas(a: DjAnalysis, b: DjAnalysis, t: DjTransition, play
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .pointerInput(a.songId, b.songId) {
                 var mode = 0 // 1..4 handles, 5 = A wave, 6 = B wave
-                val grab = with(density) { 40.dp.toPx() }
+                val grab = with(density) { 48.dp.toPx() }
                 detectDragGestures(
                     onDragStart = { pos ->
                         val w = size.width.toFloat()
@@ -296,7 +312,10 @@ private fun TransitionCanvas(a: DjAnalysis, b: DjAnalysis, t: DjTransition, play
                             3 to Offset(xOf(c.inStart), half + 8f),
                             4 to Offset(xOf(c.inEnd), h - 8f),
                         )
-                        val near = handles.minBy { (_, o) -> (o - pos).getDistance() }
+                        // A's two handles belong to the top half, B's to the bottom half: they sit close together
+                        // around the middle line and the nearest one was often the wrong one.
+                        val side = handles.filter { (id, _) -> if (pos.y < half) id <= 2 else id >= 3 }
+                        val near = side.minBy { (_, o) -> (o - pos).getDistance() }
                         mode = if ((near.second - pos).getDistance() <= grab) near.first else if (pos.y < half) 5 else 6
                     },
                     onDragEnd = {
