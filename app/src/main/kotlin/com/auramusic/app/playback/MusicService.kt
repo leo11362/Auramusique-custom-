@@ -3909,6 +3909,16 @@ class MusicService :
         }.createDataSource()
     }
 
+    private fun downloadCacheCovers(id: String, position: Long, length: Long): Boolean {
+        val need = if (length >= 0) length else {
+            val total = androidx.media3.datasource.cache.ContentMetadata
+                .getContentLength(downloadCache.getContentMetadata(id))
+            if (total <= position) return false
+            total - position
+        }
+        return downloadCache.isCached(id, position, need)
+    }
+
     private fun createDataSourceFactory(): DataSource.Factory {
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
             val mediaId = (dataSpec.key ?: error("No media id")).removeSuffix("_video")
@@ -3925,11 +3935,9 @@ class MusicService :
                 return@Factory dataSpec
             }
 
-            if (downloadCache.isCached(
-                    mediaId,
-                    dataSpec.position,
-                    if (dataSpec.length >= 0) dataSpec.length else 1
-                ) ||
+            // Only skip the URL resolution when the cache covers everything asked: a partly cached song
+            // would otherwise read its gap from the unresolved id (ENOENT, IO_FILE_NOT_FOUND).
+            if (downloadCacheCovers(mediaId, dataSpec.position, dataSpec.length) ||
                 playerCache.isCached(mediaId, dataSpec.position, CHUNK_LENGTH)
             ) {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
