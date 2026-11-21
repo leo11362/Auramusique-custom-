@@ -1,0 +1,29 @@
+{
+ "mixes": [
+  {
+   "id": "funk-phonk-br-sil",
+   "rev": 1,
+   "name": "Funk Phonk Brésil",
+   "songs": [
+    "Montagem Voltar Musicpflanze",
+    "Montagem Polychrome davidzxc",
+    "Eclética Mortal",
+    "Montagem Xonada MXZI",
+    "Montagem Tomada",
+    "Automotivo Bibi Fogosa DJ Cabeça",
+    "Montagem Mysterious Game DJ Ytalo",
+    "Montagem Coral Dj Samir",
+    "Funk Do Bounce Mc Gw",
+    "Passo Bem Solto ATLXS",
+    "Montagem Lunar DJ Sidnei",
+    "Brazilian Funk Slowed Phonk Montagem Tchau"
+   ],
+   "transitions": [
+    {
+     "bars": 4,
+     "preset": "Auto"
+    }
+   ]
+  }
+ ]
+}
