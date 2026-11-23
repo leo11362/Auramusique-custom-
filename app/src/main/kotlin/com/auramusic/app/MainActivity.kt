@@ -82,6 +82,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -472,14 +473,57 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            AuraMusicApp(
-                latestVersionName = latestVersionName,
-                onLatestVersionNameChange = { latestVersionName = it },
-                playerConnection = playerConnection,
-                database = database,
-                downloadUtil = downloadUtil,
-                syncUtils = syncUtils,
-            )
+            // Loading screen on top of the app until the player service is bound (or 5 s at most).
+            var minShown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            var timedOut by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(700); minShown = true
+                kotlinx.coroutines.delay(4300); timedOut = true
+            }
+            val ready = minShown && (playerConnection != null || timedOut)
+            Box(Modifier.fillMaxSize()) {
+                AuraMusicApp(
+                    latestVersionName = latestVersionName,
+                    onLatestVersionNameChange = { latestVersionName = it },
+                    playerConnection = playerConnection,
+                    database = database,
+                    downloadUtil = downloadUtil,
+                    syncUtils = syncUtils,
+                )
+                AnimatedVisibility(visible = !ready, enter = fadeIn(tween(0)), exit = fadeOut(tween(350))) {
+                    StartupLoading()
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun StartupLoading() {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color(0xFF0F0F12))
+                .pointerInput(Unit) {},
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.app_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(120.dp),
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(28.dp))
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    strokeWidth = 3.dp,
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+                androidx.compose.material3.Text(
+                    "Chargement…",
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
+                )
+            }
         }
     }
 
