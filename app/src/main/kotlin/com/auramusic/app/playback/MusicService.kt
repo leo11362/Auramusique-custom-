@@ -5405,6 +5405,8 @@ class MusicService :
         }
         if (ids.isEmpty()) return
         scope.launch(Dispatchers.IO) {
+            // Background decoding is opt-in (Mode DJ on): a native codec fault would stop the whole app.
+            if (!dataStore.get(com.auramusic.app.constants.DjModeEnabledKey, false)) return@launch
             for (id in ids) {
                 if (com.auramusic.app.dj.DjAnalyzer.load(filesDir, id) != null) continue
                 if (connectivityManager.isActiveNetworkMetered) return@launch

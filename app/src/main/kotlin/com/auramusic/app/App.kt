@@ -90,6 +90,7 @@ class App : Application(), SingletonImageLoader.Factory {
         
         // Install crash handler first
         CrashHandler.install(this)
+        reportLastExit()
 
         // Initialize Paxsenix synchronously so lyrics can be fetched immediately
         com.auramusic.paxsenix.Paxsenix.init(this)
@@ -362,6 +363,38 @@ class App : Application(), SingletonImageLoader.Factory {
                         .invalidateAuthToken("com.google", token)
                 }
             }
+        }
+    }
+
+    /**
+     * A silent stop (native crash, out of memory, ANR, killed by the system) never reaches CrashHandler:
+     * ask Android why the previous process ended, keep it in filesDir/last_exit.txt and show it once.
+     */
+    private fun reportLastExit() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        runCatching {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val e = am.getHistoricalProcessExitReasons(packageName, 0, 1).firstOrNull() ?: return
+            val seen = java.io.File(filesDir, "last_exit_ts.txt")
+            if (seen.exists() && seen.readText().trim() == e.timestamp.toString()) return
+            seen.writeText(e.timestamp.toString())
+            val name = when (e.reason) {
+                android.app.ApplicationExitInfo.REASON_CRASH -> "crash Java"
+                android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "crash natif"
+                android.app.ApplicationExitInfo.REASON_ANR -> "ANR (appli figée)"
+                android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "plus de mémoire (tuée par Android)"
+                android.app.ApplicationExitInfo.REASON_SIGNALED -> "signal ${e.status}"
+                android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "ressources excessives"
+                android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "échec au démarrage"
+                android.app.ApplicationExitInfo.REASON_USER_REQUESTED, android.app.ApplicationExitInfo.REASON_USER_STOPPED,
+                android.app.ApplicationExitInfo.REASON_EXIT_SELF -> return
+                else -> "raison ${e.reason}"
+            }
+            val trace = runCatching { e.traceInputStream?.bufferedReader()?.readText()?.take(6000) }.getOrNull()
+            java.io.File(filesDir, "last_exit.txt").writeText("$name | ${e.description}\n${trace ?: ""}")
+            android.os.Handler(mainLooper).postDelayed({
+                Toast.makeText(this, "Dernier arrêt : $name (${e.description})", Toast.LENGTH_LONG).show()
+            }, 2000)
         }
     }
 }
