@@ -1639,7 +1639,10 @@ class MainActivity : ComponentActivity() {
     /** Intent com.auramusic.app.action.PLAY_PLAYLIST (extra "name"): plays the local playlist whose name matches. */
     private fun playPlaylistByName(wanted: String?) {
         val q = normName(wanted.orEmpty())
-        if (q.isEmpty()) return
+        if (q.isEmpty()) {
+            android.widget.Toast.makeText(this, "Playlist introuvable", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         lifecycle.coroutineScope.launch(Dispatchers.IO) {
             val all = database.playlistsByNameAsc().first()
             val pl = all.firstOrNull { normName(it.playlist.name) == q }

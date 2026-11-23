@@ -98,6 +98,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="com.auramusic.app.action.PLAY_PLAYLIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
             <!-- Listen Together invite link -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
