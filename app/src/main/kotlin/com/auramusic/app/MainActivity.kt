@@ -243,6 +243,7 @@ private fun String?.isInSearchBackStack(): Boolean =
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     companion object {
+        private const val ACTION_PLAY_PLAYLIST = "com.auramusic.app.action.PLAY_PLAYLIST"
         private const val ACTION_SEARCH = "com.auramusic.app.action.SEARCH"
         private const val ACTION_LIBRARY = "com.auramusic.app.action.LIBRARY"
     }
@@ -1530,6 +1531,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        // Jarvis voice assistant: play a local playlist by name.
+        if (intent.action == ACTION_PLAY_PLAYLIST) {
+            val wanted = intent.getStringExtra("name")
+            intent.action = null
+            playPlaylistByName(wanted)
+            return
+        }
+
         val uri = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
         intent.data = null
         intent.removeExtra(Intent.EXTRA_TEXT)
@@ -1619,6 +1628,39 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private fun normName(s: String): String =
+        java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "").lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+    /** Intent com.auramusic.app.action.PLAY_PLAYLIST (extra "name"): plays the local playlist whose name matches. */
+    private fun playPlaylistByName(wanted: String?) {
+        val q = normName(wanted.orEmpty())
+        if (q.isEmpty()) return
+        lifecycle.coroutineScope.launch(Dispatchers.IO) {
+            val all = database.playlistsByNameAsc().first()
+            val pl = all.firstOrNull { normName(it.playlist.name) == q }
+                ?: all.firstOrNull { normName(it.playlist.name).contains(q) }
+                ?: all.firstOrNull { q.contains(normName(it.playlist.name)) && normName(it.playlist.name).length >= 3 }
+            val songs = pl?.let { database.playlistSongs(it.id).first().map { ps -> ps.song } }.orEmpty()
+            withContext(Dispatchers.Main) {
+                if (pl == null || songs.isEmpty()) {
+                    android.widget.Toast.makeText(this@MainActivity, "Playlist introuvable : $wanted", android.widget.Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                var attempts = 0
+                while (playerConnection == null && attempts < 50) { delay(100); attempts++ }
+                playerConnection?.playQueue(
+                    com.auramusic.app.playback.queues.ListQueue(
+                        title = pl.playlist.name,
+                        items = songs.map { it.toMediaItem() },
+                        startIndex = 0,
+                        position = 0L,
+                    )
+                )
             }
         }
     }
