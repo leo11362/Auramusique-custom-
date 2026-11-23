@@ -243,6 +243,7 @@ private fun String?.isInSearchBackStack(): Boolean =
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     companion object {
+        private const val ACTION_PLAY_SEARCH = "com.auramusic.app.action.PLAY_SEARCH"
         private const val ACTION_PLAY_PLAYLIST = "com.auramusic.app.action.PLAY_PLAYLIST"
         private const val ACTION_SEARCH = "com.auramusic.app.action.SEARCH"
         private const val ACTION_LIBRARY = "com.auramusic.app.action.LIBRARY"
@@ -1539,6 +1540,21 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        // Jarvis voice assistant: search the online catalogue and play the best song (mode=play) or open the search screen (mode=open).
+        if (intent.action == ACTION_PLAY_SEARCH) {
+            val query = intent.getStringExtra("query")?.trim().orEmpty()
+            val mode = intent.getStringExtra("mode")?.trim()?.lowercase()
+            intent.action = null
+            if (mode == "open" && query.isNotEmpty()) {
+                lifecycle.coroutineScope.launch {
+                    navController.navigate("search/${URLEncoder.encode(query, "UTF-8")}")
+                }
+            } else {
+                playSearch(query)
+            }
+            return
+        }
+
         val uri = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
         intent.data = null
         intent.removeExtra(Intent.EXTRA_TEXT)
@@ -1664,6 +1680,42 @@ class MainActivity : ComponentActivity() {
                         position = 0L,
                     )
                 )
+            }
+        }
+    }
+
+    /** Intent PLAY_SEARCH (mode play): plays the song of the online search that best matches the query, then its radio. */
+    private fun playSearch(query: String) {
+        val qTokens = normName(query).split(" ").filter { it.isNotEmpty() }
+        if (qTokens.isEmpty()) {
+            android.widget.Toast.makeText(this, "Aucun résultat pour « $query »", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        lifecycle.coroutineScope.launch(Dispatchers.IO) {
+            val songs = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull()
+                ?.items?.filterIsInstance<SongItem>()?.filter { !it.isEpisode }.orEmpty()
+            val best = songs.withIndex().maxByOrNull { (i, s) ->
+                val title = normName(s.title).split(" ").filter { it.isNotEmpty() }.toSet()
+                val all = title + normName(s.artists.joinToString(" ") { it.name }).split(" ").filter { it.isNotEmpty() }
+                val hit = qTokens.count { it in all }
+                val titleHit = qTokens.count { it in title }
+                // fraction of query words found (title+artists), title words weigh more, official audio beats video clips, search rank breaks ties
+                hit * 10.0 + titleHit * 2.0 - (title.size - titleHit).coerceAtLeast(0) * 0.3 -
+                    (if (s.isVideoSong) 1.5 else 0.0) - i * 0.4
+            }?.value
+            withContext(Dispatchers.Main) {
+                if (best == null) {
+                    android.widget.Toast.makeText(this@MainActivity, "Aucun résultat pour « $query »", android.widget.Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                var attempts = 0
+                while (playerConnection == null && attempts < 100) { delay(100); attempts++ }
+                val conn = playerConnection
+                if (conn == null) {
+                    android.widget.Toast.makeText(this@MainActivity, "Lecteur indisponible", android.widget.Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                conn.playQueue(YouTubeQueue.radio(best.toMediaMetadata()))
             }
         }
     }

@@ -99,6 +99,11 @@
             </intent-filter>
 
             <intent-filter>
+                <action android:name="com.auramusic.app.action.PLAY_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <intent-filter>
                 <action android:name="com.auramusic.app.action.PLAY_PLAYLIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
