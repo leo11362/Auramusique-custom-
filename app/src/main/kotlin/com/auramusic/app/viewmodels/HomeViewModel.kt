@@ -326,7 +326,7 @@ fun markWrappedAsSeen() {
             // Account playlists - independent
             launch {
                 if (YouTube.cookie != null || !YouTube.oauthToken.isNullOrBlank()) {
-                    YouTube.library("FEmusic_liked_playlists").completed().onSuccess {
+                    com.auramusic.app.utils.retryNetwork { YouTube.library("FEmusic_liked_playlists").completed() }.onSuccess {
                         accountPlaylists.value = it.items.filterIsInstance<PlaylistItem>().filterNot { it.id == "SE" }
                     }.onFailure {
                         reportException(it)
@@ -410,7 +410,7 @@ fun markWrappedAsSeen() {
 
             // Home page - independent
             launch {
-                YouTube.home().onSuccess { page ->
+                com.auramusic.app.utils.retryNetwork { YouTube.home() }.onSuccess { page ->
                     homePage.value = page.copy(
                         sections = page.sections.mapNotNull { section ->
                             val filtered = section.items
@@ -427,7 +427,7 @@ fun markWrappedAsSeen() {
 
             // Explore page - independent
             launch {
-                YouTube.explore().onSuccess { page ->
+                com.auramusic.app.utils.retryNetwork { YouTube.explore() }.onSuccess { page ->
                     explorePage.value = page.copy(
                         newReleaseAlbums = page.newReleaseAlbums.filterExplicit(hideExplicit)
                     )
@@ -436,7 +436,7 @@ fun markWrappedAsSeen() {
                 }
 
                 if (explorePage.value?.podcasts.isNullOrEmpty()) {
-                    YouTube.podcasts().onSuccess { podcastsPage ->
+                    com.auramusic.app.utils.retryNetwork { YouTube.podcasts() }.onSuccess { podcastsPage ->
                         explorePage.value = explorePage.value?.copy(
                             podcasts = podcastsPage.featured
                         )
@@ -446,7 +446,7 @@ fun markWrappedAsSeen() {
                 }
 
                 if (explorePage.value?.mixes.isNullOrEmpty()) {
-                    YouTube.mixes().onSuccess { mixesPage ->
+                    com.auramusic.app.utils.retryNetwork { YouTube.mixes() }.onSuccess { mixesPage ->
                         explorePage.value = explorePage.value?.copy(
                             mixes = mixesPage.mixes
                         )
@@ -615,6 +615,16 @@ fun markWrappedAsSeen() {
     }
 
     init {
+        // When the connection comes back and the home page is still empty, load it again
+        // instead of waiting for the user to pull to refresh.
+        runCatching {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    if (homePage.value == null && !isLoading.value && !isRefreshing.value) refresh()
+                }
+            })
+        }
         // Load home data whenever the effective YouTube session changes. Login writes cookie,
         // visitor data, and dataSyncId separately, so waiting on cookie alone can load stale
         // guest content until the app is restarted.
@@ -707,7 +717,7 @@ fun markWrappedAsSeen() {
                         reportException(it)
                     }
 
-                    YouTube.library("FEmusic_liked_playlists").completed().onSuccess {
+                    com.auramusic.app.utils.retryNetwork { YouTube.library("FEmusic_liked_playlists").completed() }.onSuccess {
                         accountPlaylists.value = it.items.filterIsInstance<PlaylistItem>().filterNot { playlist -> playlist.id == "SE" }
                     }.onFailure {
                         reportException(it)
