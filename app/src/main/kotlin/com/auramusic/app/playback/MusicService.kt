@@ -5893,14 +5893,23 @@ automixDeadlineJob?.cancel()
                  // Hold the ramp while paused, but do not spin forever: if the incoming track
                  // never starts, stop waiting so cleanup still runs.
                  var waitedMs = 0L
+                 var kicked = false
                  while (!nextPlayer.isPlaying && isActive && waitedMs < AUTOMIX_PLAYBACK_WAIT_MS) {
                      delay(100)
                      waitedMs += 100
+                     // Ready but not playing: something cleared play-when-ready, start it again.
+                     if (!kicked && waitedMs >= 500 && nextPlayer.playbackState == Player.STATE_READY && !nextPlayer.isPlaying) {
+                         kicked = true
+                         runCatching { nextPlayer.play() }
+                     }
                  }
                  if (!isActive) break
                  if (!nextPlayer.isPlaying) {
-                     Timber.tag(TAG).w("Incoming track never started, ending blend early")
-                     if (transition != null) djToast("Transition : la chanson 2 ne démarre pas")
+                     val info = "état ${nextPlayer.playbackState}, lecture ${nextPlayer.playWhenReady}, blocage ${nextPlayer.playbackSuppressionReason}"
+                     Timber.tag(TAG).w("Incoming track never started, ending blend early ($info)")
+                     if (transition != null) djToast("Transition : la chanson 2 ne démarre pas ($info)")
+                     // Do not leave the listener with a silent player: finish the swap with sound.
+                     runCatching { nextPlayer.volume = targetVolume; nextPlayer.play() }
                      break
                  }
 
