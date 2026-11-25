@@ -1583,7 +1583,7 @@ class MusicService :
                 /* minBufferMs= */ AUTOMIX_MIN_BUFFER_MS,
                 /* maxBufferMs= */ AUTOMIX_MAX_BUFFER_MS,
                 /* bufferForPlaybackMs= */ 1000,
-                /* bufferForPlaybackAfterRebufferMs= */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs= */ 4_000,
             )
             .setPrioritizeTimeOverSizeThresholdsForStreaming(true)
             .build()
@@ -2913,7 +2913,7 @@ class MusicService :
     override fun onPlaybackStateChanged(
         @Player.State playbackState: Int,
     ) {
-        Timber.tag("Player").i("état ${when (playbackState) { 1 -> "IDLE"; 2 -> "BUFFERING"; 3 -> "READY"; 4 -> "ENDED"; else -> playbackState }} · ${player.currentMediaItem?.mediaId} · pos ${player.currentPosition / 1000}s")
+        Timber.tag("Player").i("état ${when (playbackState) { 1 -> "IDLE"; 2 -> "BUFFERING"; 3 -> "READY"; 4 -> "ENDED"; else -> playbackState }} · ${player.currentMediaItem?.mediaId} · pos ${player.currentPosition / 1000}s" + if (playbackState == 2 && com.auramusic.app.utils.isWeakNetwork(connectivityManager)) " · RÉSEAU FAIBLE" else "")
         // If we're in video mode and playback fails, show an error but don't auto-switch
         // Let the user manually toggle back to audio
         if (isVideoMode && playbackState == Player.STATE_IDLE) {
@@ -5601,6 +5601,7 @@ class MusicService :
      */
     private fun warmUpAutomixPlayer(nextIndex: Int) {
         if (secondaryPlayer != null || isAutomixing || isVideoMode) return
+        if (com.auramusic.app.utils.isWeakNetwork(connectivityManager)) return
         if ((!automixEnabled && activeTransition == null) || player.repeatMode == REPEAT_MODE_ONE) return
 
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
@@ -5651,6 +5652,12 @@ class MusicService :
 
     private fun startAutomix() {
         if (isAutomixing) return
+        // A blend streams two songs at once: on a weak connection let the song end naturally.
+        if (com.auramusic.app.utils.isWeakNetwork(connectivityManager)) {
+            Timber.tag("DJ").i("Mélange ignoré : réseau faible")
+            if (activeTransition != null) djToast("Réseau faible : pas de mélange, la chanson suivante démarre normalement")
+            return
+        }
         // Same guard as scheduleCrossfade: never crossfade a video-backed song —
         // the swap tears down video mode and leaves a black video surface.
         if (isVideoMode) {
@@ -6087,14 +6094,14 @@ automixDeadlineJob?.cancel()
          * streamed track is decodable by the time the volume ramp starts, without holding an
          * unbounded amount of audio in memory. See [createAutomixLoadControl].
          */
-        private const val AUTOMIX_MIN_BUFFER_MS = 30_000
-        private const val AUTOMIX_MAX_BUFFER_MS = 60_000
+        private const val AUTOMIX_MIN_BUFFER_MS = 50_000
+        private const val AUTOMIX_MAX_BUFFER_MS = 120_000
 
         /**
          * How much of an upcoming track to buffer ahead of time. Must be at least the blend
          * length, since that is what has to be ready when the ramp starts.
          */
-        private const val AUTOMIX_PRELOAD_TARGET_US = 12_000_000L
+        private const val AUTOMIX_PRELOAD_TARGET_US = 20_000_000L
 
         /** Longest automix blend, so a long tail does not become an endless overlap. */
         private const val AUTOMIX_MAX_BLEND_MS = 8_000L

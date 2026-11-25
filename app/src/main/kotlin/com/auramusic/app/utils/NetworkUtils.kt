@@ -23,3 +23,14 @@ fun isInternetAvailable(context: Context): Boolean {
         else -> false
     }
 }
+
+/**
+ * True when the connection is slow (under about 2 Mbit/s down, as estimated by Android) or
+ * not validated. Used to lower the audio quality and skip two-stream DJ blends.
+ */
+fun isWeakNetwork(connectivityManager: ConnectivityManager): Boolean {
+    val network = connectivityManager.activeNetwork ?: return false
+    val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
+    if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return true
+    return caps.linkDownstreamBandwidthKbps in 1 until 2000
+}
