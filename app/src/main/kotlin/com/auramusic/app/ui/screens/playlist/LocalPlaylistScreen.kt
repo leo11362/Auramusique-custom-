@@ -212,7 +212,7 @@ fun LocalPlaylistScreen(
         PlaylistSongSortDescendingKey,
         true
     )
-    var locked by rememberPreference(PlaylistEditLockKey, defaultValue = true)
+    var locked by rememberPreference(PlaylistEditLockKey, defaultValue = false)
 
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }

@@ -378,11 +378,11 @@ val ArtistViewTypeKey = stringPreferencesKey("artistViewType")
 val AlbumViewTypeKey = stringPreferencesKey("albumViewType")
 val PlaylistViewTypeKey = stringPreferencesKey("playlistViewType")
 
-val PlaylistEditLockKey = booleanPreferencesKey("playlistEditLock")
+val PlaylistEditLockKey = booleanPreferencesKey("playlistEditLockV2")
 val QuickPicksKey = stringPreferencesKey("discover")
 val PreferredLyricsProviderKey = stringPreferencesKey("lyricsProvider")
 val LyricsProviderOrderKey = stringPreferencesKey("lyricsProviderOrder")
-val QueueEditLockKey = booleanPreferencesKey("queueEditLock")
+val QueueEditLockKey = booleanPreferencesKey("queueEditLockV2")
 val ShowWrappedCardKey = booleanPreferencesKey("show_wrapped_card")
 val WrappedSeenKey = booleanPreferencesKey("wrapped_seen")
 val LastWrappedMonthKey = stringPreferencesKey("last_wrapped_month") // Format: "YYYY-MM"
