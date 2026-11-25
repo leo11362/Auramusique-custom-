@@ -24,6 +24,21 @@
      "preset": "Auto"
     }
    ]
+  },
+  {
+   "id": "run-boy-run-cant-hold-us",
+   "rev": 1,
+   "name": "Run Boy Run x Can't Hold Us",
+   "songs": [
+    "Run Boy Run Woodkid",
+    "Can't Hold Us Macklemore Ryan Lewis"
+   ],
+   "transitions": [
+    {
+     "bars": 16,
+     "preset": "Auto"
+    }
+   ]
   }
  ]
 }
