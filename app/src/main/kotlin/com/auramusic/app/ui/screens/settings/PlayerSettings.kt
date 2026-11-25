@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -137,6 +138,34 @@ fun PlayerSettings(
     var djMashBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var djSyncStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var djDemoBusy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showAppLog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (showAppLog) {
+        var logText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.auramusic.app.utils.AppLog.read(20_000)) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAppLog = false },
+            title = { Text("Journal de l'appli") },
+            text = {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.heightIn(max = 380.dp).verticalScroll(androidx.compose.foundation.rememberScrollState(Int.MAX_VALUE))
+                ) { Text(logText.ifBlank { "Vide pour l'instant." }, style = MaterialTheme.typography.bodySmall) }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, com.auramusic.app.utils.AppLog.read(60_000))
+                    }
+                    djContext.startActivity(android.content.Intent.createChooser(send, "Partager le journal").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Text("Partager") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { com.auramusic.app.utils.AppLog.clear(); logText = "" }) { Text("Vider") }
+                    TextButton(onClick = { showAppLog = false }) { Text("Fermer") }
+                }
+            },
+        )
+    }
     val (djMode, onDjModeChange) = rememberPreference(DjModeEnabledKey, defaultValue = false)
     val (djBlendSeconds, onDjBlendSecondsChange) = rememberPreference(DjBlendSecondsKey, defaultValue = 6f)
     val (djStyle, onDjStyleChange) = rememberPreference(DjTransitionStyleKey, defaultValue = "FADE")
@@ -462,6 +491,12 @@ fun PlayerSettings(
                             }
                         }
                     }
+                ))
+                add(Material3SettingsItem(
+                    icon = painterResource(R.drawable.history),
+                    title = { Text("Journal de l'appli") },
+                    description = { Text("Ce que fait l'appli quand elle bug : à lire ou à m'envoyer") },
+                    onClick = { showAppLog = true }
                 ))
                 add(Material3SettingsItem(
                     icon = painterResource(R.drawable.dj_disc),

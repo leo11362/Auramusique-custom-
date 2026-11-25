@@ -79,6 +79,8 @@ class App : Application(), SingletonImageLoader.Factory {
         super.onCreate()
 
         Timber.plant(Timber.DebugTree())
+        com.auramusic.app.utils.AppLog.install(filesDir)
+        Timber.tag("Player").i("Appli démarrée")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
             Application.getProcessName() == "$packageName:tvpreview"
         ) {

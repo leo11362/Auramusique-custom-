@@ -2736,6 +2736,7 @@ class MusicService :
         mediaItem: MediaItem?,
         reason: Int,
     ) {
+        Timber.tag("Player").i("chanson ${mediaItem?.mediaId} (${mediaItem?.mediaMetadata?.title}) raison=$reason")
         preAnalyzeSongs()
         // Skip transitions triggered by our own MergingMediaSource injection.
         // The merged source has MediaItem.EMPTY which would cause false "new
@@ -2912,6 +2913,7 @@ class MusicService :
     override fun onPlaybackStateChanged(
         @Player.State playbackState: Int,
     ) {
+        Timber.tag("Player").i("état ${when (playbackState) { 1 -> "IDLE"; 2 -> "BUFFERING"; 3 -> "READY"; 4 -> "ENDED"; else -> playbackState }} · ${player.currentMediaItem?.mediaId} · pos ${player.currentPosition / 1000}s")
         // If we're in video mode and playback fails, show an error but don't auto-switch
         // Let the user manually toggle back to audio
         if (isVideoMode && playbackState == Player.STATE_IDLE) {
@@ -2967,6 +2969,7 @@ class MusicService :
     }
 
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        Timber.tag("Player").i("lecture demandée=$playWhenReady raison=$reason")
         if (playWhenReady && projectivyPreviewFocused) {
             Timber.tag(TAG).i(
                 "Keeping AuraMusic paused while Projectivy song card is focused title=%s",
@@ -3316,6 +3319,7 @@ class MusicService :
     }
 
     override fun onPlayerError(error: PlaybackException) {
+        Timber.tag("Player").w(error, "erreur de lecture ${error.errorCodeName} sur ${player.currentMediaItem?.mediaId}")
         super.onPlayerError(error)
         
         // Safety check : ensuring player is still initialized
